@@ -15,6 +15,7 @@ group_chat Chat::create_group_chat(std::string name, std::vector<client_info>& m
 	group_chat gc;
 	gc.members = members;
 	gc.name = name;
+	gc.messages.push_back(Logger::LogTime() + "Групповой чат создан, приятного общения :)");
 	return gc;
 }
 
@@ -23,6 +24,7 @@ p2p_chat Chat::create_p2p_chat(client_info& member1, client_info& member2)
 	p2p_chat pc;
 	pc.member1 = member1;
 	pc.member2 = member2;
+	pc.messages.push_back(Logger::LogTime() + "Чат создан, поздоровайтесь ;)");
 	return pc;
 }
 
@@ -34,36 +36,12 @@ void common_chat::on_message_sent(const std::string& message, client_info& sende
 
 void common_chat::on_file_sent(const std::string& file_path, client_info& sender)
 {
-	std::string info = Logger::LogTime() + sender.name + " отправил файл: " + file_path;
+	std::string file_name = FileUtils::GetFileName(file_path);
+	std::string info = Logger::LogTime() + sender.name + " отправил файл " + file_name;
 	messages.push_back(info);
 
-	file_paths.push_back(file_path);
+	file_paths.push_back(file_name);
 }
-
-//int common_chat::notify_members(API action, std::string& new_message, std::vector<client_info>& members)
-//{
-//	// Функция отправки данных "в общем виде".
-//	size_t req_pos = 0;
-//	const auto req_length = new_message.length();
-//	int notified = 0;
-//
-//	for (auto member : members)
-//	{
-//		while (req_pos < req_length)
-//		{
-//			if (int bytes_count = send(member.client_socket, new_message.c_str() + req_pos, req_length - req_pos, 0) < 0)
-//			{
-//			}
-//			else
-//			{
-//				// Сместить указатель на свободное место в буфере.
-//				req_pos += bytes_count;
-//				notified++;
-//			}
-//		}
-//	}
-//	return notified;
-//}
 
 void group_chat::on_message_sent(const std::string& message, client_info& sender)
 {
@@ -76,7 +54,7 @@ void group_chat::on_file_sent(const std::string& message, client_info& sender)
 	common_chat::on_file_sent(message, sender);
 }
 
-bool p2p_chat::operator==(const client_info members[2]) const
+bool p2p_chat::operator==(const p2p_chat& ch) const
 {
-	return (member1 == members[0] && member2 == members[1]) || (member1 == members[1] && member2 == members[0]);
+	return (member1 == ch.member1 && member2 == ch.member2) || (member1 == ch.member2 && member2 == ch.member1);
 }

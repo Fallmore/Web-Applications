@@ -22,17 +22,23 @@
     <ClCompile Include="api.cpp" />
     <ClCompile Include="Chat.cpp" />
     <ClCompile Include="Client.cpp" />
+    <ClCompile Include="ClientGui.cpp" />
+    <ClCompile Include="FileUtils.cpp" />
     <ClCompile Include="Logger.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Server.cpp" />
+    <ClCompile Include="SplitConsole.cpp" />
     <ClCompile Include="WSAManager.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="api.h" />
     <ClInclude Include="Chat.h" />
     <ClInclude Include="Client.h" />
+    <ClInclude Include="ClientGui.h" />
+    <ClInclude Include="FileUtils.h" />
     <ClInclude Include="Logger.h" />
     <ClInclude Include="Server.h" />
+    <ClInclude Include="SplitConsole.h" />
     <ClInclude Include="WSAManager.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
@@ -41,6 +47,7 @@
     <ProjectGuid>{8acec26a-c548-4d26-92fb-b8e675a4a317}</ProjectGuid>
     <RootNamespace>MasangerMAX</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>MessengerMAX</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
