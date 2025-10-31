@@ -9,6 +9,14 @@ class Client
 {
 public:
 
+	chats GetChats();
+
+	common_chat& GetChat(API_request& request);
+	
+	common_chat& GetChatUnsafe(API_request& request);
+
+	API_request GetResponse();
+
 	SOCKET CreateConnection(const std::string& host, const std::string& port);
 
 	bool RecvResponse();
@@ -25,16 +33,18 @@ public:
 
 	~Client();
 
-	chats chats;
 	client_info we;
 
-	API_request response;
 	std::atomic<bool> is_response_get = false, continue_listening = false;
 private:
-	SOCKET server_sock;
+
+	SOCKET server_sock = INVALID_SOCKET;
 	fd_set rset;
 
-	std::mutex sock_mutex, response_mutex;
+	std::mutex sock_mutex, response_mutex, chats_mutex;
 	std::thread listen_t;
+
+	chats chats;
+	API_request response;
 };
 

@@ -9,32 +9,32 @@ using namespace std;
 
 void SettingsServer() {
 	Server server;
-	string host, portS;
-	int port;
+	string host = "10.178.229.253", portS;
+	int port = 6;
 	bool err = false;
 	do
 	{
 		if (err) cout << "Ошибка! Введите другие параметры!" << endl;
 
-		cout << "Введите IP-адресс для сервера: ";
-		cin >> host;
+		//cout << "Введите IP-адресс для сервера: ";
+		//cin >> host;
 
-		do
-		{
-			cout << "Введите порт для сервера: ";
-			cin >> portS;
-			try
-			{
-				port = stoi(portS);
-				err = false;
-			}
-			catch (const std::exception&)
-			{
-				cout << "Ошибка! Вы ввели сторонние символы!" << endl;
-				err = true;
-			}
+		//do
+		//{
+		//	cout << "Введите порт для сервера: ";
+		//	cin >> portS;
+		//	try
+		//	{
+		//		port = stoi(portS);
+		//		err = false;
+		//	}
+		//	catch (const std::exception&)
+		//	{
+		//		cout << "Ошибка! Вы ввели сторонние символы!" << endl;
+		//		err = true;
+		//	}
 
-		} while (err);
+		//} while (err);
 
 
 	} while (err = !server.Start(host, port)); // Если будет ошибка во время старта, то продолжится цикл, 

@@ -28,8 +28,8 @@ API_request IAPI::ParseToApi(const std::string& req)
 std::string IAPI::ParseToString(const API_request& req)
 {
 	std::string str = "";
-	str += req.action + separator;
-	for (int i = 0; i < req.args.size(); i++) str += req.args[i];
+	str += std::to_string(req.action);
+	for (int i = 0; i < req.args.size(); i++) str += separator + req.args[i];
 
 	return str;
 }

@@ -15,6 +15,13 @@ SOCKET Server::AcceptClient(SOCKET& server_sock) {
 
 	Logger::Log("Клиент принят\n		Адрес клиента: " + GetMyIp4(client_socket));
 
+	//Всех задержит
+	FD_SET(client_socket, &rset);
+	do
+	{
+		int nready = select(1, &rset, NULL, NULL, NULL);
+	} while (!FD_ISSET(client_socket, &rset));
+
 	return client_socket;
 }
 
@@ -53,22 +60,22 @@ std::string Server::GetClientIp4(SOCKET sock)
 bool Server::RecvRequest(SOCKET client_socket) {
 	std::array<char, MAX_RECV_BUFFER_SIZE> buffer;
 	std::string log, req = "";
-	while (true)
+	if (true)
 	{
 		// Прочитать данные. Если данных нет, будет возвращен -1, а errno
 		// установлена в 0, то есть отсутствие ошибки.
 
 		const auto recv_bytes = recv(client_socket, buffer.data(), buffer.size() - 1, 0);
-		Logger::Log("Получено сообщение от " + GetMyIp4(client_socket) + " в размере " + std::to_string(recv_bytes) + " байт...");
 
 		if (recv_bytes > 0)
 		{
+			Logger::Log("Получено сообщение от " + GetMyIp4(client_socket) + " в размере " + std::to_string(recv_bytes) + " байт...");
 			// Создать из буфера строку и вывести на консоль.
 			buffer[recv_bytes] = '\0';
 			req += std::string(buffer.begin(), std::next(buffer.begin(), recv_bytes));
 			std::cout << "		------------\n		"
 				<< req << std::endl;
-			continue;
+			//continue;
 		}
 		else if (0 == recv_bytes)
 		{
@@ -78,21 +85,19 @@ bool Server::RecvRequest(SOCKET client_socket) {
 		{
 			// Для Windows корректнее будет проверять WSAGetLastError()
 			// вместо errno.
-			std::cout << "Получение сообщения провалено: " << WSAGetLastError() << std::endl;
-			if (EINTR == errno) continue;
-			if (0 == errno) break;
-			// -1 тут не ошибка. Если данных нет, errno будет содержать
-			// код EAGAIN или Resource temporarily unavailable.
-			// Но здесь это нормально.
-			if (EAGAIN == errno) break;
+			//if (EINTR == errno) continue;
+			//if (0 == errno) break;
+			//// -1 тут не ошибка. Если данных нет, errno будет содержать
+			//// код EAGAIN или Resource temporarily unavailable.
+			//// Но здесь это нормально.
+			//if (EAGAIN == errno) break;
 			return false;
 		}
-		break;
+		//break;
 	}
 
 	API_request r = ParseToApi(req);
-	DoRequest(r, client_socket);
-	return true;
+	return DoRequest(r, client_socket);
 }
 
 bool Server::Start(std::string host, int port) {
@@ -151,32 +156,42 @@ bool Server::Start(std::string host, int port) {
 	Logger::Log("Сервер запущен на http://" + std::string(buff) + ":" + std::to_string(port) + "\n");
 
 	int nready;
-	timeval timeout = {0, 10};
+	timeval timeout = { 0, 10 };
 	// Рабочий цикл сервера.
 	while (true) {
 		SOCKET client_socket;
 		FD_ZERO(&rset);
 		FD_SET(server_socket, &rset);
 
-		nready = select(MAXSOCKS, &rset, NULL, NULL, &timeout);
-
-		if (FD_ISSET(server_socket, &rset)) {
-			client_socket = AcceptClient(server_socket);
-			FD_SET(client_socket, &rset);
-		}
-		nready = select(MAXSOCKS, &rset, NULL, NULL, &timeout);
-		if (FD_ISSET(client_socket, &rset)) {
-			if (!RecvRequest(client_socket)) {
-			}
-		}
-
-		//TO DO пересмотреть select и циклы
 		for (auto& client : clients) {
 			FD_SET(client.client_socket, &rset);
-			nready = select(MAXSOCKS, &rset, NULL, NULL, &timeout);
-			if (FD_ISSET(client.client_socket, &rset)) {
-				if (!RecvRequest(client.client_socket)) {
-					RemoveClient(client.client_socket);
+		}
+
+		nready = select(MAXSOCKS + 1, &rset, NULL, NULL, &timeout);
+
+		if (nready > 0) {
+			// Проверяем новый ли клиент
+			if (FD_ISSET(server_socket, &rset)) {
+				client_socket = AcceptClient(server_socket);
+				if (!RecvRequest(client_socket)) {
+					Logger::Log("Клиент " + GetMyIp4(client_socket) + " не смог зарегистрироваться");
+				}
+				nready--;
+			}
+
+			// Обрабатываем клиентов с данными
+			for (auto it = clients.begin(); nready > 0 && it != clients.end(); ) {
+				if (FD_ISSET(it->client_socket, &rset)) {
+					if (!RecvRequest(it->client_socket)) {
+						it = RemoveClient(it->client_socket);
+					}
+					else {
+						++it;
+					}
+					nready--;
+				}
+				else {
+					++it;
 				}
 			}
 		}
@@ -185,14 +200,14 @@ bool Server::Start(std::string host, int port) {
 	return true;
 }
 
-void Server::DoRequest(API_request& req, SOCKET& client_socket)
+bool Server::DoRequest(API_request& req, SOCKET& client_socket)
 {
 	switch (req.action) {
 	case register_yourself:
-		AddClient(req, client_socket);
+		return AddClient(req, client_socket);
 		break;
 	case show_client_list:
-		ShowClientList(client_socket);
+		return ShowClientList(client_socket);
 		break;
 	case create_group_chat:
 	case create_p2p_chat:
@@ -214,9 +229,10 @@ void Server::DoRequest(API_request& req, SOCKET& client_socket)
 		GetFile(req, client_socket);
 		break;
 	default:
-		closesocket(client_socket);
+		return false;
 		break;
 	}
+	return true;
 }
 
 bool Server::SendResponse(SOCKET& sock, const std::string& response)
@@ -227,9 +243,9 @@ bool Server::SendResponse(SOCKET& sock, const std::string& response)
 
 	while (req_pos < req_length)
 	{
-		if (int bytes_count = send(sock, response.c_str() + req_pos, req_length - req_pos, 0) < 0)
+		int bytes_count = send(sock, response.c_str() + req_pos, req_length - req_pos, 0);
+		if (bytes_count < 0)
 		{
-			RemoveClient(sock);
 			return false;
 		}
 		else
@@ -245,40 +261,52 @@ std::vector<client_info>::iterator Server::GetClientIterator(SOCKET& client_sock
 {
 	auto it = std::find_if(clients.begin(), clients.end(),
 		[client_socket](const client_info& info) { return info.client_socket == client_socket; });
+	if (it == clients.end()) throw std::invalid_argument("Не существует такого клиента по сокету");
+
 	return it;
 }
 
-void Server::AddClient(API_request& req, SOCKET& client_socket)
+client_info& Server::GetClient(std::string name)
+{
+	auto it = std::find_if(clients.begin(), clients.end(),
+		[name](const client_info& info) { return info.name == name; });
+	if (it == clients.end()) throw std::invalid_argument("Не существует такого клиента по имени");
+	return *it;
+}
+
+bool Server::AddClient(API_request& req, SOCKET& client_socket)
 {
 	clients.push_back({ client_socket, req.args[0], Logger::LogTime() });
 
 	std::string response = "";
-	response += register_yourself + separator;
-	response += client_socket + separator + req.args[0];
+	response += std::to_string(register_yourself) + separator;
+	response += std::to_string(client_socket) + separator + req.args[0];
 	if (SendResponse(client_socket, response))
 	{
 		Logger::Log("Клиент " + GetMyIp4(client_socket) + " зарегистрировался под именем " + req.args[0]);
+		return true;
 	}
+	else return false;
 }
 
-void Server::RemoveClient(SOCKET& client_socket)
+std::vector<client_info>::iterator Server::RemoveClient(SOCKET& client_socket)
 {
 	std::string log = "Клиент " + GetMyIp4(client_socket);
 	auto it = GetClientIterator(client_socket);
 
 	if (it == clients.end()) {
 		Logger::Log(log + " не зарегистрировался и вышел");
-		return;
+		return it;
 	}
 
 	Logger::Log(log + " под именем " + (*it).name + " отключился");
 	closesocket(client_socket);
-	clients.erase(it);
+	return clients.erase(it);
 }
 
 bool Server::ShowClientList(SOCKET& client_socket)
 {
-	std::string response = std::to_string(show_client_list) + separator + "Список клиентов: \n";
+	std::string response = std::to_string(show_client_list) + separator;
 	for (auto& client : clients)
 	{
 		response += client.name + ", Время регистрации: " + client.register_time + "\n";
@@ -296,209 +324,176 @@ bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
 {
 	std::string message = "", response = "";
 	std::vector<client_info> recievers;
-	common_chat target_chat;
+	client_info& sender = (*GetClientIterator(client_socket));
 	std::string log = "Клиент " + GetMyIp4(client_socket)
-		+ " под именем " + (*GetClientIterator(client_socket)).name;
+		+ " под именем " + sender.name;
 
-	std::string name_group_chat = "";
-	group_chat gchat;
-	std::vector<group_chat>::iterator gchit;
+	try
+	{
+		common_chat& chat = GetChatUnsafe(req, sender);
+		response += std::to_string(req.action);
+		switch (req.action) {
+		case send_message_in_common_chat:
+			// На случай, если сообщение разделилось сепаратором
+			for (auto& part : req.args) message += part;
+			Chat::send_message(chat, message, sender);
 
-	p2p_chat pchat;
-	client_info sender = (*GetClientIterator(client_socket));
-	client_info reciever;
-	p2p_chat temp_pchat;
-	std::vector<p2p_chat>::iterator pchit;
+			recievers = std::vector<client_info>(clients);
+			Logger::Log(log + " отправил сообщение в общий чат");
+			break;
+		case send_message_in_group_chat:
+			response += separator + req.args[0];
 
-	response += req.action;
-	switch (req.action) {
-	case send_message_in_common_chat:
-		// На случай, если сообщение разделилось сепаратором
-		for (auto& part : req.args) message += part + separator;
-		Chat::send_message(chats.c_chat, message, sender);
+			// На случай, если сообщение разделилось сепаратором
+			for (int i = 1; i < req.args.size(); i++) message += req.args[i];
+			Chat::send_message(chat, message, sender);
 
-		recievers = std::vector<client_info>(clients);
-		target_chat = chats.c_chat;
+			recievers = std::vector<client_info>((*dynamic_cast<group_chat*>(&chat)).members);
+			Logger::Log(log + " отправил сообщение в групповой чат");
+			break;
+		case send_message_in_p2p_chat:
+			// На случай, если сообщение разделилось сепаратором
+			for (int i = 2; i < req.args.size(); i++) message += req.args[i];
+			Chat::send_message(chat, message, sender);
 
-		Logger::Log(log + " отправил сообщение в общий чат");
-		break;
-	case send_message_in_group_chat:
-		name_group_chat = req.args[0];
-		response += separator + name_group_chat;
-
-		gchit = std::find_if(chats.group_chats.begin(), chats.group_chats.end(),
-			[name_group_chat](const group_chat& chat) { return chat.name == name_group_chat; });
-		if (gchit == chats.group_chats.end()) {
-			Logger::Log(log + " попытался написать в несуществующий групповой чат");
-			return false;
+			recievers = { (*dynamic_cast<p2p_chat*>(&chat)).member1, (*dynamic_cast<p2p_chat*>(&chat)).member2 };
+			Logger::Log(log + " отправил сообщение в p2p чат");
+			break;
+		default:
+			break;
 		}
 
-		// На случай, если сообщение разделилось сепаратором
-		for (int i = 1; i < req.args.size(); i++) message += req.args[i] + separator;
-		Chat::send_message((*gchit), message, sender);
-
-		recievers = std::vector<client_info>((*gchit).members);
-		target_chat = (*gchit);
-
-		Logger::Log(log + " отправил сообщение в групповой чат");
-		break;
-	case send_message_in_p2p_chat:
-		reciever = { (SOCKET)(std::stoi(req.args[0])), req.args[1] };
-		temp_pchat.member1 = reciever; temp_pchat.member2 = sender;
-
-		pchit = std::find_if(chats.p2p_chats.begin(), chats.p2p_chats.end(),
-			[temp_pchat](const p2p_chat& chat) { return chat == temp_pchat; });
-		if (pchit == chats.p2p_chats.end()) {
-			Logger::Log(log + " попытался написать в несуществующий p2p чат");
-			return false;
+		if (req.action != send_message_in_p2p_chat) {
+			response += separator + chat.messages.back();
+			for (auto& rreciever : recievers) {
+				if (!SendResponse(rreciever.client_socket, response)) {
+					RemoveClient(rreciever.client_socket);
+				}
+			}
 		}
+		else {
+			response = std::to_string(req.action) + separator
+				+ std::to_string(recievers[1].client_socket) + separator
+				+ recievers[1].name + separator
+				+ chat.messages.back();
+			if (!SendResponse(recievers[0].client_socket, response)) {
+				RemoveClient(recievers[0].client_socket);
+			}
 
-		// На случай, если сообщение разделилось сепаратором
-		for (int i = 2; i < req.args.size(); i++) message += req.args[i] + separator;
-		Chat::send_message(*pchit, message, sender);
-
-		recievers = { (*pchit).member1, (*pchit).member2 };
-		target_chat = (*pchit);
-
-		Logger::Log(log + " отправил сообщение в p2p чат");
-		break;
-	default:
-		break;
-	}
-
-	if (req.action != send_message_in_p2p_chat) {
-		response += separator + target_chat.messages.back();
-		for (auto& rreciever : recievers) {
-			SendResponse(rreciever.client_socket, response);
+			response = std::to_string(req.action) + separator
+				+ std::to_string(recievers[0].client_socket) + separator
+				+ recievers[0].name + separator
+				+ chat.messages.back();
+			if (!SendResponse(recievers[1].client_socket, response)) {
+				RemoveClient(recievers[1].client_socket);
+			}
 		}
-	}
-	else {
-		response = req.action + separator
-			+ std::to_string(recievers[1].client_socket) + separator
-			+ recievers[1].name + separator
-			+ target_chat.messages.back();
-		SendResponse(recievers[0].client_socket, response);
-
-		response = req.action + separator
-			+ std::to_string(recievers[0].client_socket) + separator
-			+ recievers[0].name + separator
-			+ target_chat.messages.back();
-		SendResponse(recievers[1].client_socket, response);
-	}
 	return true;
+	}
+	catch (const std::invalid_argument&)
+	{
+		Logger::Log(log + " попытался написать в несуществующий чат");
+		response = std::to_string(error) + separator + "Такого чата больше не существует(";
+		if (!SendResponse(client_socket, response)) {
+			RemoveClient(client_socket);
+		}
+		return false;
+	}
 }
 
 bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 {
 	std::string path = "server temp/", response = "";;
 	std::vector<client_info> recievers;
-	common_chat target_chat;
 	std::string log = "Клиент " + GetMyIp4(client_socket)
 		+ " под именем " + (*GetClientIterator(client_socket)).name;
-
-	std::string name_group_chat;
-	group_chat gchat;
-	std::vector<group_chat>::iterator gchit;
-
-	p2p_chat pchat;
 	client_info sender = (*GetClientIterator(client_socket));
-	client_info reciever;
-	p2p_chat temp_pchat;
-	std::vector<p2p_chat>::iterator pchit;
 
-	response += req.action;
-	switch (req.action) {
-	case send_file_in_common_chat:
-		path += req.args[0];
-		if (!FileUtils::WriteFile(path)) {
-			Logger::Log(log + " попытался отправить файл в общий чат, но произошла ошибка");
-			SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл");
-			return false;
+	try
+	{
+		common_chat& chat = GetChatUnsafe(req, sender);
+		response += std::to_string(req.action);
+		switch (req.action) {
+		case send_file_in_common_chat:
+			path += req.args[0];
+			if (!FileUtils::WriteFile(path)) {
+				Logger::Log(log + " попытался отправить файл в общий чат, но произошла ошибка");
+				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл");
+				return false;
+			}
+			Chat::send_file(chat, path, sender);
+
+			recievers = std::vector<client_info>(clients);
+			Logger::Log(log + " отправил файл в общий чат");
+			break;
+		case send_file_in_group_chat:
+			response += separator + req.args[0];
+			path += req.args[1];
+			if (!FileUtils::WriteFile(path)) {
+				Logger::Log(log + " попытался отправить файл в групповой чат, но произошла ошибка");
+				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл");
+				return false;
+			}
+			Chat::send_file(chat, path, sender);
+
+			recievers = std::vector<client_info>((*dynamic_cast<group_chat*>(&chat)).members);
+			Logger::Log(log + " отправил файл в групповой чат");
+			break;
+		case send_file_in_p2p_chat:
+			path += req.args[2];
+			if (!FileUtils::WriteFile(path)) {
+				Logger::Log(log + " попытался отправить файл в p2p чат, но произошла ошибка");
+				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл");
+				return false;
+			}
+			Chat::send_file(chat, path, sender);
+
+			recievers = { (*dynamic_cast<p2p_chat*>(&chat)).member1, (*dynamic_cast<p2p_chat*>(&chat)).member2 };
+			Logger::Log(log + " отправил файл в p2p чат");
+			break;
+		default:
+			break;
 		}
 
-		Chat::send_file(chats.c_chat, path, sender);
-
-		recievers = std::vector<client_info>(clients);
-		target_chat = chats.c_chat;
-
-		Logger::Log(log + " отправил файл в общий чат");
-		break;
-	case send_file_in_group_chat:
-		name_group_chat = req.args[0];
-		response += separator + name_group_chat;
-		gchit = std::find_if(chats.group_chats.begin(), chats.group_chats.end(),
-			[name_group_chat](const group_chat& chat) { return chat.name == name_group_chat; });
-		if (gchit == chats.group_chats.end()) {
-			Logger::Log(log + " попытался отправить файл в несуществующий групповой чат");
-			return false;
+		if (req.action != send_file_in_p2p_chat) {
+			response += separator + chat.messages.back()
+				+ separator + chat.file_paths.back();
+			for (auto& rreciever : recievers) {
+				if (!SendResponse(rreciever.client_socket, response)) {
+					RemoveClient(rreciever.client_socket);
+				}
+			}
 		}
+		else {
+			response = std::to_string(req.action) + separator
+				+ std::to_string(recievers[1].client_socket) + separator
+				+ recievers[1].name + separator
+				+ chat.messages.back() + separator
+				+ chat.file_paths.back();
+			if (!SendResponse(recievers[0].client_socket, response)) {
+				RemoveClient(recievers[0].client_socket);
+			}
 
-		path += req.args[1];
-		if (!FileUtils::WriteFile(path)) {
-			Logger::Log(log + " попытался отправить файл в групповой чат, но произошла ошибка");
-			SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл");
-			return false;
+			response = std::to_string(req.action) + separator
+				+ std::to_string(recievers[0].client_socket) + separator
+				+ recievers[0].name + separator
+				+ chat.messages.back() + separator
+				+ chat.file_paths.back();
+			if (!SendResponse(recievers[1].client_socket, response)) {
+				RemoveClient(recievers[1].client_socket);
+			}
 		}
-
-		Chat::send_file(*gchit, path, sender);
-
-		recievers = std::vector<client_info>((*gchit).members);
-		target_chat = *gchit;
-
-		Logger::Log(log + " отправил файл в групповой чат");
-		break;
-	case send_file_in_p2p_chat:
-		reciever = { (SOCKET)(std::stoi(req.args[0])), req.args[1] };
-		temp_pchat.member1 = reciever; temp_pchat.member2 = sender;
-
-		pchit = std::find_if(chats.p2p_chats.begin(), chats.p2p_chats.end(),
-			[temp_pchat](const p2p_chat& chat) { return chat == temp_pchat; });
-		if (pchit == chats.p2p_chats.end()) {
-			Logger::Log(log + " попытался отправить файл в несуществующий p2p чат");
-			return false;
-		}
-
-		path += req.args[0];
-		if (!FileUtils::WriteFile(path)) {
-			Logger::Log(log + " попытался отправить файл в p2p чат, но произошла ошибка");
-			SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл");
-			return false;
-		}
-
-		Chat::send_file(*pchit, path, sender);
-
-		recievers = { (*pchit).member1, (*pchit).member2 };
-		target_chat = *pchit;
-
-		Logger::Log(log + " отправил файл в p2p чат");
-		break;
-	default:
-		break;
+		return true;
 	}
-
-	if (req.action != send_file_in_p2p_chat) {
-		response += separator + target_chat.messages.back()
-			+ separator + target_chat.file_paths.back();
-		for (auto& rreciever : recievers) {
-			SendResponse(rreciever.client_socket, response);
+	catch (const std::invalid_argument&)
+	{
+		Logger::Log(log + " попытался отправить файл в несуществующий чат");
+		response = std::to_string(error) + separator + "Такого чата больше не существует(";
+		if (!SendResponse(client_socket, response)) {
+			RemoveClient(client_socket);
 		}
+		return false;
 	}
-	else {
-		response = req.action + separator
-			+ std::to_string(recievers[1].client_socket) + separator
-			+ recievers[1].name + separator
-			+ target_chat.messages.back() + separator
-			+ target_chat.file_paths.back();
-		SendResponse(recievers[0].client_socket, response);
-
-		response = req.action + separator
-			+ std::to_string(recievers[0].client_socket) + separator
-			+ recievers[0].name + separator
-			+ target_chat.messages.back() + separator
-			+ target_chat.file_paths.back();
-		SendResponse(recievers[1].client_socket, response);
-	}
-	return true;
 }
 
 bool Server::CreateChat(API_request& req, SOCKET& client_socket)
@@ -508,43 +503,80 @@ bool Server::CreateChat(API_request& req, SOCKET& client_socket)
 	std::string response = "";
 
 	std::vector<client_info> clnts;
+	client_info clnt;
 	group_chat gc;
 	p2p_chat pc;
 	common_chat target_chat;
 
-	response += req.action;
+	response += std::to_string(req.action);
+	int i = 1;
 	switch (req.action) {
 	case create_group_chat:
 		response += separator + req.args[0];
-		for (size_t i = 1; i < req.args.size(); i += 2) {
+		try
+		{
+			for (i = 1; i < req.args.size(); i++) {
 
-			clnts.push_back({ (SOCKET)(std::stoi(req.args[i])), req.args[i + 1] });
-			response += separator + req.args[i] + separator + req.args[i + 1];
+				clnt = GetClient(req.args[i]);
+				clnts.push_back(clnt);
+				response += separator + std::to_string(clnt.client_socket) + separator + clnt.name;
+			}
 		}
-
+		catch (const std::invalid_argument&)
+		{
+			Logger::Log(log + " хотел создать групповой чат с " + req.args[i] + " но он вышел");
+			response = std::to_string(error) + separator + "Пользователь " + req.args[i] + " вышел(";
+			if (!SendResponse(client_socket, response)) {
+				RemoveClient(client_socket);
+			}
+			return false;
+		}
+		
+		clnt = *GetClientIterator(client_socket);
+		response += separator + std::to_string(clnt.client_socket) + separator + clnt.name;
+		clnts.push_back(clnt);
 		gc = Chat::create_group_chat(req.args[0], clnts);
 		target_chat = gc;
 
 		chats.group_chats.push_back(gc);
-
+		Logger::Log(log + " создал групповой чат " + gc.name);
 		break;
 	case create_p2p_chat:
-		for (size_t i = 0; i < req.args.size(); i += 2) {
-			clnts.push_back({ (SOCKET)(std::stoi(req.args[i])), req.args[i + 1] });
-			response += separator + req.args[i] + separator + req.args[i + 1];
+		try
+		{
+			clnt = GetClient(req.args[0]);
 		}
+		catch (const std::invalid_argument&)
+		{
+			Logger::Log(log + " хотел создать личный чат с " + req.args[0] + " но он вышел");
+			response = std::to_string(error) + separator + "Пользователь " + req.args[0] + " вышел(";
+			if (!SendResponse(client_socket, response)) {
+				RemoveClient(client_socket);
+			}
+			return false;
+		}
+
+		clnts.push_back(clnt);
+		response += separator + std::to_string(clnt.client_socket) + separator + clnt.name;
+
+		clnt = *GetClientIterator(client_socket);
+		response += separator + std::to_string(clnt.client_socket) + separator + clnt.name;
+		clnts.push_back(*GetClientIterator(client_socket));
 
 		pc = Chat::create_p2p_chat(clnts[0], clnts[1]);
 		target_chat = pc;
 
 		chats.p2p_chats.push_back(pc);
+		Logger::Log(log + " создал p2p чат с " + clnt.name);
 		break;
 	default:
 		break;
 	}
 
 	for (auto& reciever : clnts) {
-		SendResponse(reciever.client_socket, response);
+		if (!SendResponse(reciever.client_socket, response)) {
+			RemoveClient(reciever.client_socket);
+		}
 	}
 	return true;
 }
@@ -555,12 +587,52 @@ bool Server::GetFile(API_request& req, SOCKET& client_socket)
 		+ " под именем " + (*GetClientIterator(client_socket)).name;
 	std::string content = FileUtils::GetFile(req.args[0]);
 
-	if (SendResponse(client_socket, req.action + separator + content)) {
+	if (SendResponse(client_socket, std::to_string(req.action) + separator + content)) {
 		Logger::Log(log + " скачал файл " + req.args[0]);
 		return true;
 	}
 
 	return false;
+}
+
+common_chat& Server::GetChatUnsafe(API_request& request, client_info& sender)
+{
+	std::string name_group_chat = "";
+	std::vector<group_chat>::iterator gchit;
+
+	p2p_chat pc, pc_temp;
+	std::vector<p2p_chat>::iterator pchit;
+	client_info member;
+
+	switch (request.action) {
+	case send_message_in_common_chat:
+		return chats.c_chat;
+		break;
+	case send_message_in_group_chat:
+		name_group_chat = request.args[0];
+		gchit = std::find_if(chats.group_chats.begin(), chats.group_chats.end(),
+			[name_group_chat](const group_chat& chat) { return chat.name == name_group_chat; });
+		if (gchit == chats.group_chats.end()) {
+			throw std::runtime_error("Упс, чат не найден: " + name_group_chat);
+		}
+
+		return *gchit;
+		break;
+	case send_message_in_p2p_chat:
+		pc_temp.member1 = sender;
+		pc_temp.member2 = GetClient(request.args[1]);
+
+		pchit = std::find_if(chats.p2p_chats.begin(), chats.p2p_chats.end(),
+			[pc_temp](const p2p_chat& chat) { return chat == pc_temp; });
+		if (pchit == chats.p2p_chats.end()) {
+			throw std::runtime_error("Упс, чат не найден: " + pc_temp.member1.name + " и " + pc_temp.member2.name);
+		}
+		return *pchit;
+		break;
+	default:
+		throw std::runtime_error("Упс, неизвестный чат");
+		break;
+	}
 }
 
 Server::~Server() {

@@ -20,13 +20,13 @@ public:
 
 	bool Start(std::string host, int port);
 
-	void DoRequest(API_request& req, SOCKET& client_socket);
+	bool DoRequest(API_request& req, SOCKET& client_socket);
 
 	bool SendResponse(SOCKET& sock, const std::string& response);
 
-	void AddClient(API_request& req, SOCKET& client_socket);
+	bool AddClient(API_request& req, SOCKET& client_socket);
 
-	void RemoveClient(SOCKET& client_socket);
+	std::vector<client_info>::iterator RemoveClient(SOCKET& client_socket);
 
 	bool ShowClientList(SOCKET& client_socket) override;
 
@@ -42,6 +42,8 @@ public:
 
 private:
 	std::vector<client_info>::iterator GetClientIterator(SOCKET& client_socket);
+	client_info& GetClient(std::string name);
+	common_chat& GetChatUnsafe(API_request& request, client_info& sender);
 
 	SOCKET server_socket;
 	fd_set rset, wset;
