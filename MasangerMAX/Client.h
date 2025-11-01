@@ -46,5 +46,6 @@ private:
 
 	chats chats;
 	API_request response;
+	std::string dst_files = "D:\\New data\\repos\\Web Applications (difficult)\\x64\\Debug\\client temp\\";
 };
 

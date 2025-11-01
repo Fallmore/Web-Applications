@@ -19,6 +19,7 @@ private:
 	void WriteMessages(API_request& request, atomic<bool>& writed,
 		atomic<bool>& stop_write, atomic<bool>& err);
 	bool OpenFiles(API_request& request);
+	bool SendFile(API_request& request);
 	bool GetUserList();
 	void ParseUserList(string& list);
 	bool ShowUserList();

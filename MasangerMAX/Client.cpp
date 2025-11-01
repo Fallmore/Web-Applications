@@ -22,6 +22,10 @@ common_chat& Client::GetChatUnsafe(API_request& request)
 	client_info member;
 
 	switch (request.action) {
+	case send_file_in_common_chat:
+	case send_message_in_common_chat:
+		return chats.c_chat;
+	case send_file_in_group_chat:
 	case send_message_in_group_chat:
 		name_group_chat = request.args[0];
 		gchit = std::find_if(chats.group_chats.begin(), chats.group_chats.end(),
@@ -32,6 +36,7 @@ common_chat& Client::GetChatUnsafe(API_request& request)
 
 		return *gchit;
 		break;
+	case send_file_in_p2p_chat:
 	case send_message_in_p2p_chat:
 		pc_temp.member1 = we;
 		pc_temp.member2 = { (SOCKET)(std::stoi(request.args[0])), request.args[1] };
@@ -108,7 +113,7 @@ bool Client::RecvResponse()
 	std::string temp = "";
 
 	std::lock_guard<std::mutex> lock(sock_mutex);
-	if (true)
+	while (true)
 	{
 		// Прочитать данные. Если данных нет, будет возвращен -1, а errno
 		// установлена в 0, то есть отсутствие ошибки.
@@ -120,7 +125,7 @@ bool Client::RecvResponse()
 			buffer[recv_bytes] = '\0';
 			temp += std::string(buffer.begin(), std::next(buffer.begin(), recv_bytes));
 
-			//continue;
+			continue;
 		}
 		else if (0 == recv_bytes)
 		{
@@ -130,16 +135,16 @@ bool Client::RecvResponse()
 		{
 			// Для Windows корректнее будет проверять WSAGetLastError()
 			// вместо errno.
-			//if (EINTR == errno) continue;
-			//if (0 == errno) break;
-			//// -1 тут не ошибка. Если данных нет, errno будет содержать
-			//// код EAGAIN или Resource temporarily unavailable.
-			//// Но здесь это нормально.
-			//if (EAGAIN == errno) break;
+			if (EINTR == errno) continue;
+			if (0 == errno) break;
+			// -1 тут не ошибка. Если данных нет, errno будет содержать
+			// код EAGAIN или Resource temporarily unavailable.
+			// Но здесь это нормально.
+			if (EAGAIN == errno) break;
 			std::cout << "Получение сообщения провалено: " << WSAGetLastError() << std::endl;
 			return false;
 		}
-		//break;
+		break;
 	}
 
 	if (!continue_listening) return false;
@@ -181,7 +186,7 @@ void Client::ManageResponse()
 {
 	std::vector<client_info> clnts;
 
-	std::string path = "client temp/";
+	std::string path;
 
 	{
 		std::lock_guard<std::mutex> lock(chats_mutex);
@@ -212,7 +217,7 @@ void Client::ManageResponse()
 				chats.p2p_chats.push_back(Chat::create_p2p_chat(clnts[0], clnts[1]));
 				break;
 			case send_message_in_common_chat:
-				for (auto& mes : response.args) chats.c_chat.messages.push_back(mes);
+				for (auto& mes : response.args) chat.messages.push_back(mes);
 				break;
 			case send_message_in_group_chat:
 				// На случай, если сообщение разделилось сепаратором
@@ -223,8 +228,8 @@ void Client::ManageResponse()
 				for (int i = 2; i < response.args.size(); i++) chat.messages.push_back(response.args[i]);
 				break;
 			case send_file_in_common_chat:
-				chats.c_chat.messages.push_back(response.args[0]);
-				chats.c_chat.file_paths.push_back(response.args[1]);
+				chat.messages.push_back(response.args[0]);
+				chat.file_paths.push_back(response.args[1]);
 				break;
 			case send_file_in_group_chat:
 				chat.messages.push_back(response.args[1]);
@@ -237,8 +242,8 @@ void Client::ManageResponse()
 			case get_file_from_common_chat:
 			case get_file_from_group_chat:
 			case get_file_from_p2p_chat:
-				path += response.args[0];
-				if (!FileUtils::WriteFile(path)) {
+				path = dst_files + response.args[0];
+				if (!FileUtils::WriteFileContent(path, response.args[1])) {
 					std::cout << "Не удалось записать файл";
 				}
 				else {

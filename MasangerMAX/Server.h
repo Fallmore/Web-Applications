@@ -43,13 +43,13 @@ public:
 private:
 	std::vector<client_info>::iterator GetClientIterator(SOCKET& client_socket);
 	client_info& GetClient(std::string name);
-	common_chat& GetChatUnsafe(API_request& request, client_info& sender);
+	common_chat& GetChatUnsafe(API_request& req, client_info& sender);
 
 	SOCKET server_socket;
 	fd_set rset, wset;
 
 	std::vector<client_info> clients;
 	chats chats;
-
+	std::string dst_files = "D:\\New data\\repos\\Web Applications (difficult)\\x64\\Debug\\server temp\\";
 };
 

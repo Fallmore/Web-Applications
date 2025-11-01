@@ -5,11 +5,10 @@ bool FileUtils::WriteFile(const std::string& path, const std::string& dst)
 	std::ifstream ifs = std::ifstream(path);
 	std::string line, file_name = GetFileName(path);
 	std::ofstream of = std::ofstream(dst + file_name);
+	
 	if (ifs && of) {
-
-		while (std::getline(ifs, line)) {
-			of << line << "\n";
-		}
+		line = { std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>() };
+			of << line;
 	}
 	else {
 		return false;
@@ -20,15 +19,27 @@ bool FileUtils::WriteFile(const std::string& path, const std::string& dst)
 	return true;
 }
 
+bool FileUtils::WriteFileContent(const std::string& path, const std::string& content)
+{
+	std::ofstream of = std::ofstream(path);
+	if (of) {
+
+		of << content;
+	}
+	else {
+		return false;
+	}
+
+	of.close();
+	return true;
+}
+
 std::string FileUtils::GetFile(const std::string& path)
 {
 	std::ifstream ifs = std::ifstream(path);
-	std::string line, file_name = GetFileName(path), lines;
+	std::string lines;
 	if (ifs) {
-
-		while (std::getline(ifs, line)) {
-			lines += line + "\n";
-		}
+		lines = { std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>() };
 	}
 	else {
 		return "Не удалось прочитать файл(";

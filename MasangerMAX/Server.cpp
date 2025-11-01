@@ -16,9 +16,9 @@ SOCKET Server::AcceptClient(SOCKET& server_sock) {
 	Logger::Log("Клиент принят\n		Адрес клиента: " + GetMyIp4(client_socket));
 
 	//Всех задержит
-	FD_SET(client_socket, &rset);
 	do
 	{
+		FD_SET(client_socket, &rset);
 		int nready = select(1, &rset, NULL, NULL, NULL);
 	} while (!FD_ISSET(client_socket, &rset));
 
@@ -60,7 +60,7 @@ std::string Server::GetClientIp4(SOCKET sock)
 bool Server::RecvRequest(SOCKET client_socket) {
 	std::array<char, MAX_RECV_BUFFER_SIZE> buffer;
 	std::string log, req = "";
-	if (true)
+	while (true)
 	{
 		// Прочитать данные. Если данных нет, будет возвращен -1, а errno
 		// установлена в 0, то есть отсутствие ошибки.
@@ -75,7 +75,7 @@ bool Server::RecvRequest(SOCKET client_socket) {
 			req += std::string(buffer.begin(), std::next(buffer.begin(), recv_bytes));
 			std::cout << "		------------\n		"
 				<< req << std::endl;
-			//continue;
+			continue;
 		}
 		else if (0 == recv_bytes)
 		{
@@ -85,15 +85,15 @@ bool Server::RecvRequest(SOCKET client_socket) {
 		{
 			// Для Windows корректнее будет проверять WSAGetLastError()
 			// вместо errno.
-			//if (EINTR == errno) continue;
-			//if (0 == errno) break;
-			//// -1 тут не ошибка. Если данных нет, errno будет содержать
-			//// код EAGAIN или Resource temporarily unavailable.
-			//// Но здесь это нормально.
-			//if (EAGAIN == errno) break;
+			if (EINTR == errno) continue;
+			if (0 == errno) break;
+			// -1 тут не ошибка. Если данных нет, errno будет содержать
+			// код EAGAIN или Resource temporarily unavailable.
+			// Но здесь это нормально.
+			if (EAGAIN == errno) break;
 			return false;
 		}
-		//break;
+		break;
 	}
 
 	API_request r = ParseToApi(req);
@@ -240,10 +240,11 @@ bool Server::SendResponse(SOCKET& sock, const std::string& response)
 	// Функция отправки данных "в общем виде".
 	size_t req_pos = 0;
 	const auto req_length = response.length();
-
+	std::string req_send;
 	while (req_pos < req_length)
 	{
-		int bytes_count = send(sock, response.c_str() + req_pos, req_length - req_pos, 0);
+		req_send = response.substr(req_pos, min(req_pos + MAX_RECV_BUFFER_SIZE, req_length));
+		int bytes_count = send(sock, req_send.c_str(), sizeof(req_send), 0);
 		if (bytes_count < 0)
 		{
 			return false;
@@ -281,7 +282,7 @@ bool Server::AddClient(API_request& req, SOCKET& client_socket)
 	std::string response = "";
 	response += std::to_string(register_yourself) + separator;
 	response += std::to_string(client_socket) + separator + req.args[0];
-	if (SendResponse(client_socket, response))
+	if (SendResponse(client_socket, response + separator))
 	{
 		Logger::Log("Клиент " + GetMyIp4(client_socket) + " зарегистрировался под именем " + req.args[0]);
 		return true;
@@ -311,7 +312,7 @@ bool Server::ShowClientList(SOCKET& client_socket)
 	{
 		response += client.name + ", Время регистрации: " + client.register_time + "\n";
 	}
-	if (SendResponse(client_socket, response))
+	if (SendResponse(client_socket, response + separator))
 	{
 		Logger::Log("Клиент " + GetMyIp4(client_socket)
 			+ " под именем " + (*GetClientIterator(client_socket)).name + " получил список клиентов");
@@ -366,7 +367,7 @@ bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
 		if (req.action != send_message_in_p2p_chat) {
 			response += separator + chat.messages.back();
 			for (auto& rreciever : recievers) {
-				if (!SendResponse(rreciever.client_socket, response)) {
+				if (!SendResponse(rreciever.client_socket, response + separator)) {
 					RemoveClient(rreciever.client_socket);
 				}
 			}
@@ -376,7 +377,7 @@ bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
 				+ std::to_string(recievers[1].client_socket) + separator
 				+ recievers[1].name + separator
 				+ chat.messages.back();
-			if (!SendResponse(recievers[0].client_socket, response)) {
+			if (!SendResponse(recievers[0].client_socket, response + separator)) {
 				RemoveClient(recievers[0].client_socket);
 			}
 
@@ -384,17 +385,17 @@ bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
 				+ std::to_string(recievers[0].client_socket) + separator
 				+ recievers[0].name + separator
 				+ chat.messages.back();
-			if (!SendResponse(recievers[1].client_socket, response)) {
+			if (!SendResponse(recievers[1].client_socket, response + separator)) {
 				RemoveClient(recievers[1].client_socket);
 			}
 		}
-	return true;
+		return true;
 	}
 	catch (const std::invalid_argument&)
 	{
 		Logger::Log(log + " попытался написать в несуществующий чат");
 		response = std::to_string(error) + separator + "Такого чата больше не существует(";
-		if (!SendResponse(client_socket, response)) {
+		if (!SendResponse(client_socket, response + separator)) {
 			RemoveClient(client_socket);
 		}
 		return false;
@@ -403,11 +404,11 @@ bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
 
 bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 {
-	std::string path = "server temp/", response = "";;
+	std::string path, response = "";
 	std::vector<client_info> recievers;
-	std::string log = "Клиент " + GetMyIp4(client_socket)
-		+ " под именем " + (*GetClientIterator(client_socket)).name;
 	client_info sender = (*GetClientIterator(client_socket));
+	std::string log = "Клиент " + GetMyIp4(client_socket)
+		+ " под именем " + sender.name;
 
 	try
 	{
@@ -416,9 +417,9 @@ bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 		switch (req.action) {
 		case send_file_in_common_chat:
 			path += req.args[0];
-			if (!FileUtils::WriteFile(path)) {
+			if (!FileUtils::WriteFile(path, dst_files)) {
 				Logger::Log(log + " попытался отправить файл в общий чат, но произошла ошибка");
-				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл");
+				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл" + separator);
 				return false;
 			}
 			Chat::send_file(chat, path, sender);
@@ -429,9 +430,9 @@ bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 		case send_file_in_group_chat:
 			response += separator + req.args[0];
 			path += req.args[1];
-			if (!FileUtils::WriteFile(path)) {
+			if (!FileUtils::WriteFile(path, dst_files)) {
 				Logger::Log(log + " попытался отправить файл в групповой чат, но произошла ошибка");
-				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл");
+				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл" + separator);
 				return false;
 			}
 			Chat::send_file(chat, path, sender);
@@ -441,9 +442,9 @@ bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 			break;
 		case send_file_in_p2p_chat:
 			path += req.args[2];
-			if (!FileUtils::WriteFile(path)) {
+			if (!FileUtils::WriteFile(path, dst_files)) {
 				Logger::Log(log + " попытался отправить файл в p2p чат, но произошла ошибка");
-				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл");
+				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл" + separator);
 				return false;
 			}
 			Chat::send_file(chat, path, sender);
@@ -459,7 +460,7 @@ bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 			response += separator + chat.messages.back()
 				+ separator + chat.file_paths.back();
 			for (auto& rreciever : recievers) {
-				if (!SendResponse(rreciever.client_socket, response)) {
+				if (!SendResponse(rreciever.client_socket, response + separator)) {
 					RemoveClient(rreciever.client_socket);
 				}
 			}
@@ -470,7 +471,7 @@ bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 				+ recievers[1].name + separator
 				+ chat.messages.back() + separator
 				+ chat.file_paths.back();
-			if (!SendResponse(recievers[0].client_socket, response)) {
+			if (!SendResponse(recievers[0].client_socket, response + separator)) {
 				RemoveClient(recievers[0].client_socket);
 			}
 
@@ -479,7 +480,7 @@ bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 				+ recievers[0].name + separator
 				+ chat.messages.back() + separator
 				+ chat.file_paths.back();
-			if (!SendResponse(recievers[1].client_socket, response)) {
+			if (!SendResponse(recievers[1].client_socket, response + separator)) {
 				RemoveClient(recievers[1].client_socket);
 			}
 		}
@@ -489,7 +490,7 @@ bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 	{
 		Logger::Log(log + " попытался отправить файл в несуществующий чат");
 		response = std::to_string(error) + separator + "Такого чата больше не существует(";
-		if (!SendResponse(client_socket, response)) {
+		if (!SendResponse(client_socket, response + separator)) {
 			RemoveClient(client_socket);
 		}
 		return false;
@@ -526,12 +527,12 @@ bool Server::CreateChat(API_request& req, SOCKET& client_socket)
 		{
 			Logger::Log(log + " хотел создать групповой чат с " + req.args[i] + " но он вышел");
 			response = std::to_string(error) + separator + "Пользователь " + req.args[i] + " вышел(";
-			if (!SendResponse(client_socket, response)) {
+			if (!SendResponse(client_socket, response + separator)) {
 				RemoveClient(client_socket);
 			}
 			return false;
 		}
-		
+
 		clnt = *GetClientIterator(client_socket);
 		response += separator + std::to_string(clnt.client_socket) + separator + clnt.name;
 		clnts.push_back(clnt);
@@ -550,7 +551,7 @@ bool Server::CreateChat(API_request& req, SOCKET& client_socket)
 		{
 			Logger::Log(log + " хотел создать личный чат с " + req.args[0] + " но он вышел");
 			response = std::to_string(error) + separator + "Пользователь " + req.args[0] + " вышел(";
-			if (!SendResponse(client_socket, response)) {
+			if (!SendResponse(client_socket, response + separator)) {
 				RemoveClient(client_socket);
 			}
 			return false;
@@ -574,7 +575,7 @@ bool Server::CreateChat(API_request& req, SOCKET& client_socket)
 	}
 
 	for (auto& reciever : clnts) {
-		if (!SendResponse(reciever.client_socket, response)) {
+		if (!SendResponse(reciever.client_socket, response + separator)) {
 			RemoveClient(reciever.client_socket);
 		}
 	}
@@ -585,9 +586,9 @@ bool Server::GetFile(API_request& req, SOCKET& client_socket)
 {
 	std::string log = "Клиент " + GetMyIp4(client_socket)
 		+ " под именем " + (*GetClientIterator(client_socket)).name;
-	std::string content = FileUtils::GetFile(req.args[0]);
+	std::string content = FileUtils::GetFile(dst_files + req.args[0]);
 
-	if (SendResponse(client_socket, std::to_string(req.action) + separator + content)) {
+	if (SendResponse(client_socket, std::to_string(req.action) + separator + req.args[0] + separator + content + separator)) {
 		Logger::Log(log + " скачал файл " + req.args[0]);
 		return true;
 	}
@@ -595,7 +596,7 @@ bool Server::GetFile(API_request& req, SOCKET& client_socket)
 	return false;
 }
 
-common_chat& Server::GetChatUnsafe(API_request& request, client_info& sender)
+common_chat& Server::GetChatUnsafe(API_request& req, client_info& sender)
 {
 	std::string name_group_chat = "";
 	std::vector<group_chat>::iterator gchit;
@@ -604,12 +605,14 @@ common_chat& Server::GetChatUnsafe(API_request& request, client_info& sender)
 	std::vector<p2p_chat>::iterator pchit;
 	client_info member;
 
-	switch (request.action) {
+	switch (req.action) {
+	case send_file_in_common_chat:
 	case send_message_in_common_chat:
 		return chats.c_chat;
 		break;
+	case send_file_in_group_chat:
 	case send_message_in_group_chat:
-		name_group_chat = request.args[0];
+		name_group_chat = req.args[0];
 		gchit = std::find_if(chats.group_chats.begin(), chats.group_chats.end(),
 			[name_group_chat](const group_chat& chat) { return chat.name == name_group_chat; });
 		if (gchit == chats.group_chats.end()) {
@@ -618,9 +621,10 @@ common_chat& Server::GetChatUnsafe(API_request& request, client_info& sender)
 
 		return *gchit;
 		break;
+	case send_file_in_p2p_chat:
 	case send_message_in_p2p_chat:
 		pc_temp.member1 = sender;
-		pc_temp.member2 = GetClient(request.args[1]);
+		pc_temp.member2 = GetClient(req.args[1]);
 
 		pchit = std::find_if(chats.p2p_chats.begin(), chats.p2p_chats.end(),
 			[pc_temp](const p2p_chat& chat) { return chat == pc_temp; });

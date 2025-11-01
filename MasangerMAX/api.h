@@ -4,7 +4,7 @@
 #include "WSAManager.h"
 #include "Logger.h"
 
-static const char* separator = "/\\";
+static const char* separator = "/|\\";
 constexpr int MAX_RECV_BUFFER_SIZE = 256;
 
 struct client_info {

@@ -126,9 +126,10 @@ bool ClientGui::ChooseChat(API_request& request)
 	int i = 0, choice = -1;
 	bool is_group_chat = false;
 	client_info member;
-	chats chats = client.GetChats();
+	chats chats;
 	do
 	{
+		chats = client.GetChats();
 		system("cls");
 		cout << "=====Выберите чат=====\n\n";
 
@@ -154,7 +155,6 @@ bool ClientGui::ChooseChat(API_request& request)
 		cout << endl << ++i << ". Создать чат\n";
 		cout << ++i << ". Вернуться\n\nВвод: ";
 
-		int choice = -1;
 		CheckEnter(choice, i);
 
 		if (choice == i - 1) {
@@ -187,6 +187,7 @@ bool ClientGui::CreateChat(API_request& request)
 	bool multiple_choice = false;
 	API_request temp_req;
 	temp_req.action = request.action == send_message_in_group_chat ? create_group_chat : create_p2p_chat;
+	int i = 0, choice = -1;
 
 	system("cls");
 	cout << waiting;
@@ -213,7 +214,6 @@ bool ClientGui::CreateChat(API_request& request)
 		break;
 	}
 
-	int i = 0;
 	cout << "=====Создание " + welcome + "=====\n";
 	if (multiple_choice) {
 		cout << "\nНапишите название группового чата: ";
@@ -232,7 +232,6 @@ bool ClientGui::CreateChat(API_request& request)
 		cout << "Доступных пользователей нет\n";
 	}
 	cout << endl << ++i << ". Вернуться\n\nВвод: ";
-	int choice = -1;
 	CheckEnter(choice, i);
 	if (choice == i) return true;
 	choice--;
@@ -250,14 +249,14 @@ bool ClientGui::CreateChat(API_request& request)
 			}
 			cout << endl << ++i << ". Закончить\n";
 			cout << ++i << ". Вернуться\n\nВвод: ";
-			int choice = -1;
 			CheckEnter(choice, i);
-			if (choice == i) return true;
-			if (choice == i - 1) break;
+			choice--;
+			if (choice == i - 1) return true;
+			if (choice == i - 2) break;
 
 			temp_req.args.push_back(local_cl_name[choice]);
 
-		} while (choice != i - 1);
+		} while (choice != i - 2);
 	}
 
 	if (!client.SendRequest(temp_req)) return false;
@@ -270,15 +269,15 @@ bool ClientGui::CreateChat(API_request& request)
 		system("cls");
 		cout << "\n\nОжидание ответа от сервера...\n\n";
 		if (!WaitResponse(false)) return false;
-		system("cls");
 		response = client.GetResponse();
 	} while (response.action != temp_req.action && response.action != error);
 
 	if (response.action == temp_req.action) {
-		cout << "Чат успешно создан\n\n";
+		cout << "\nЧат успешно создан\n";
 	}
 	cout << endl;
 	system("pause");
+
 	return true;
 }
 
@@ -360,6 +359,16 @@ bool ClientGui::OpenMessages(API_request& request)
 
 				update_messages = true;
 			}
+			// Проверяем, отправил ли кто файл в этот чат
+			else if (response.action != request.action) {
+				if (response.action == send_file_in_common_chat
+					|| (response.action == send_file_in_group_chat
+						&& request.args[0] == response.args[0])
+					|| (response.action == send_file_in_p2p_chat &&
+						request.args[0] == response.args[0] &&
+						request.args[1] == response.args[1]))
+					update_messages = true;
+			}
 		}
 	}
 
@@ -402,11 +411,12 @@ void ClientGui::WriteMessages(API_request& request, atomic<bool>& writed,
 
 bool ClientGui::OpenFiles(API_request& request)
 {
-	API_request temp_req;
-	common_chat chat = client.GetChat(request);
+	API_request temp_req = request;
+	common_chat chat;
 	int i = 0, choice = -1;
 	do
 	{
+		chat = client.GetChat(request);
 		system("cls");
 		cout << "=====" + GetChatName(request) + "=====\n\n";
 		cout << "Выберите, какой файл скачать:\n";
@@ -418,7 +428,6 @@ bool ClientGui::OpenFiles(API_request& request)
 			temp_req.action = get_file_from_group_chat;
 		else
 			temp_req.action = get_file_from_p2p_chat;
-
 
 		for (i = 0; i < chat.file_paths.size(); i++)
 		{
@@ -439,8 +448,7 @@ bool ClientGui::OpenFiles(API_request& request)
 			else
 				temp_req.action = send_file_in_p2p_chat;
 
-			/*CreateChat(request);
-			return ChooseChat(request);*/
+			if (!SendFile(temp_req)) return false;
 		}
 	} while (choice == i - 1);
 
@@ -459,15 +467,47 @@ bool ClientGui::OpenFiles(API_request& request)
 		system("cls");
 		cout << "\n\nОжидание ответа от сервера...\n\n";
 		if (!WaitResponse(false)) return false;
-		system("cls");
 		response = client.GetResponse();
 	} while (response.action != temp_req.action && response.action != error);
 
 	if (response.action == temp_req.action) {
-		cout << "Файл успешно скачан\n\n";
+		cout << "\nФайл успешно скачан\n";
 	}
 	cout << endl;
 	system("pause");
+
+	return true;
+}
+
+bool ClientGui::SendFile(API_request& request)
+{
+	system("cls");
+	cout << "=====Отправка файла=====\n\n";
+
+	cout << "Введите путь отправляемого файла: ";
+	string file_path;
+	getline(cin, file_path);
+	API_request temp_req = request;
+	temp_req.args.push_back(file_path);
+
+	if (!client.SendRequest(temp_req)) return false;
+	API_request response;
+	// Если кто-то что-то отправил в какой-то чат, то ждём, 
+	// пока не пришлют ответ на скачивание файла
+	do
+	{
+		system("cls");
+		cout << "\n\nОжидание ответа от сервера...\n\n";
+		if (!WaitResponse(false)) return false;
+		response = client.GetResponse();
+	} while (response.action != temp_req.action && response.action != error);
+
+	if (response.action == temp_req.action) {
+		cout << "\nФайл успешно отправлен\n\n";
+	}
+	cout << endl;
+	system("pause");
+
 	return true;
 }
 
@@ -520,10 +560,10 @@ bool ClientGui::ShowUserList()
 		system("cls");
 		cout << "\n\nОжидание ответа от сервера...\n\n";
 		if (!WaitResponse(false)) return false;
-		system("cls");
 		response = client.GetResponse();
-	} while (response.action != show_client_list);
+	} while (response.action != show_client_list && response.action != error);
 
+	system("cls");
 	cout << "=====Список пользователей=====\n\n";
 	cout << response.args[0] << endl;
 	system("pause");
