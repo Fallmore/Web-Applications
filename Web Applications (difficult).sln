@@ -13,7 +13,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Scaner", "Scaner\Scaner.vcx
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sniffer", "Sniffer\Sniffer.vcxproj", "{E5FDD8F6-DC7D-4830-B7D7-43FBD51E3F32}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MasangerMAX", "MasangerMAX\MasangerMAX.vcxproj", "{8ACEC26A-C548-4D26-92FB-B8E675A4A317}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MessengerMAX", "MessengerMAX\MessengerMAX.vcxproj", "{8ACEC26A-C548-4D26-92FB-B8E675A4A317}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
