@@ -1,19 +1,26 @@
 #include "Server.h"
+#include "Client.h"
 
 SOCKET Server::AcceptClient(SOCKET& server_sock) {
 	sockaddr_storage client_addr;
 	int client_addr_length = sizeof(client_addr);
 
 	SOCKET client_socket = accept(server_sock, reinterpret_cast<sockaddr*>(&client_addr), &client_addr_length);
-	//std::this_thread::sleep_for(5000ms);
 
 	if (!client_socket)
 	{
 		throw std::system_error(errno, std::system_category(), "accept");
 	}
-	//assert(sizeof(sockaddr_in) == client_addr_length);
+	assert(sizeof(sockaddr_in) == client_addr_length);
 
 	Logger::Log("Клиент принят\n		Адрес клиента: " + GetMyIp4(client_socket));
+
+	//Всех задержит
+	do
+	{
+		FD_SET(client_socket, &rset);
+		int nready = select(1, &rset, NULL, NULL, NULL);
+	} while (!FD_ISSET(client_socket, &rset));
 
 	return client_socket;
 }
@@ -52,38 +59,32 @@ std::string Server::GetClientIp4(SOCKET sock)
 
 bool Server::RecvRequest(SOCKET client_socket) {
 	std::array<char, MAX_RECV_BUFFER_SIZE> buffer;
-	std::string log;
+	std::string log, req = "";
 	while (true)
 	{
 		// Прочитать данные. Если данных нет, будет возвращен -1, а errno
 		// установлена в 0, то есть отсутствие ошибки.
 
 		const auto recv_bytes = recv(client_socket, buffer.data(), buffer.size() - 1, 0);
-		Logger::Log("Получено сообщение от " + GetMyIp4(client_socket) + " в размере " + std::to_string(recv_bytes) + " байт...");
 
 		if (recv_bytes > 0)
 		{
+			Logger::Log("Получено сообщение от " + GetMyIp4(client_socket) + " в размере " + std::to_string(recv_bytes) + " байт...");
 			// Создать из буфера строку и вывести на консоль.
 			buffer[recv_bytes] = '\0';
-			std::string req = std::string(buffer.begin(), std::next(buffer.begin(),
-				recv_bytes));
+			req += std::string(buffer.begin(), std::next(buffer.begin(), recv_bytes));
 			std::cout << "		------------\n		"
 				<< req << std::endl;
-			
-			API_request r = ParseRequest(req);
-			DoRequest(r, client_socket);
 			continue;
 		}
-		else if (0 == recv_bytes) 
+		else if (0 == recv_bytes)
 		{
-			RemoveClient(client_socket);
 			return false;
 		}
 		else if (-1 == recv_bytes)
 		{
 			// Для Windows корректнее будет проверять WSAGetLastError()
 			// вместо errno.
-			std::cout << "Получение сообщения провалено: " << WSAGetLastError() << std::endl;
 			if (EINTR == errno) continue;
 			if (0 == errno) break;
 			// -1 тут не ошибка. Если данных нет, errno будет содержать
@@ -94,243 +95,16 @@ bool Server::RecvRequest(SOCKET client_socket) {
 		}
 		break;
 	}
-	return true;
-}
 
-API_request Server::ParseRequest(const std::string& req)
-{
-	const char *delimiter = ";";
-	char* next_token1 = NULL;
-	char* splt = strtok_s(const_cast<char*>(req.c_str()), delimiter, &next_token1);
-	API_request api;
-	api.action = static_cast<API>(std::stoi(splt));
-
-	splt = strtok_s(nullptr, delimiter, &next_token1);
-	while (splt != nullptr)
-	{
-		api.args.push_back(splt);
-		splt = strtok_s(nullptr, delimiter, &next_token1);
-	}
-
-	return api;
-}
-
-void Server::DoRequest(API_request& req, SOCKET& client_socket)
-{
-	switch (req.action) {
-	case register_yourself:
-		AddClient(req, client_socket);
-		break;
-	case show_client_list:
-		ShowClientList(client_socket);
-		break;
-	case create_group_chat:
-	case create_p2p_chat:
-		CreateChat(req, client_socket);
-		break;
-	case send_message_in_common_chat:
-	case send_message_in_group_chat:
-	case send_message_in_p2p_chat:
-		SendMessageInChat(req, client_socket);
-		break;
-	case send_file_in_common_chat:
-	case send_file_in_group_chat:
-	case send_file_in_p2p_chat:
-		SendFileInChat(req, client_socket);
-		break;
-	default:
-		break;
-	}
-}
-
-bool Server::SendResponse(SOCKET& sock, const std::string& request)
-{
-	// Функция отправки данных "в общем виде".
-	size_t req_pos = 0;
-	const auto req_length = request.length();
-	while (req_pos < req_length)
-	{
-		if (int bytes_count = send(sock, request.c_str() + req_pos, req_length - req_pos, 0) < 0)
-		{
-			return false;
-		}
-		else
-		{
-			// Сместить указатель на свободное место в буфере.
-			req_pos += bytes_count;
-		}
-	}
-	return true;
-}
-
-std::vector<client_info>::const_iterator Server::GetClientIterator(SOCKET& client_socket)
-{
-	auto it = std::find(clients.begin(), clients.end(),
-		[client_socket](const client_info& info) { return info.client_socket == client_socket; });
-	return it;
-}
-
-int Server::SendMessagesToClients(API& action, common_chat& chat)
-{
-	switch (action) {
-		case
-	}
-}
-
-void Server::AddClient(API_request& req, SOCKET& client_socket)
-{
-	clients.push_back({ client_socket, req.args[0], Logger::LogTime()});
-	Logger::Log("Клиент " + GetMyIp4(client_socket) + " зарегистрировался под именем " + req.args[0]);
-}
-
-void Server::RemoveClient(SOCKET& client_socket)
-{
-	auto it = GetClientIterator(client_socket);
-
-	Logger::Log("Клиент " + GetMyIp4(client_socket) + " под именем " + (*it).name + " отключился");
-	clients.erase(it);
-}
-
-bool Server::ShowClientList(SOCKET& client_socket)
-{
-	std::string response = "Список клиентов: \n";
-	for (auto client : clients)
-	{
-		response += client.name + ", Время регистрации: " + client.register_time + "\n";
-	}
-	if (SendResponse(client_socket, response))
-	{
-		Logger::Log("Клиент " + GetMyIp4(client_socket) 
-			+ " под именем " + (*GetClientIterator(client_socket)).name + " получил список клиентов");
-		return true;
-	}
-	else return false;
-}
-
-bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
-{
-	std::string message = "";
-	
-	std::string name_group_chat;
-	group_chat gchat;
-
-	p2p_chat pchat;
-	client_info reciever;
-	client_info members[2];
-
-	client_info sender = (*GetClientIterator(client_socket));
-	switch (req.action) {
-	case send_message_in_common_chat:
-		// На случай, если сообщение разделилось сепаратором в виде символа ';'
-		for (auto& part : req.args) message += part + ";";
-		Chat::send_message(chats.c_chat, message, sender);
-
-		Logger::Log("Клиент " + GetMyIp4(client_socket)
-			+ " под именем " + (*GetClientIterator(client_socket)).name + " отправил сообщение в общий чат");
-		break;
-	case send_message_in_group_chat:
-		name_group_chat = req.args[0];
-		gchat = *(std::find(chats.group_chats.begin(), chats.group_chats.end(),
-			[name_group_chat](const group_chat& chat) { return chat.name == name_group_chat; }));
-
-		// На случай, если сообщение разделилось сепаратором в виде символа ';'
-		for (int i = 1; i < req.args.size(); i++) message += req.args[i] + ";";
-		Chat::send_message(gchat, message, sender);
-
-		Logger::Log("Клиент " + GetMyIp4(client_socket)
-			+ " под именем " + (*GetClientIterator(client_socket)).name + " отправил сообщение в групповой чат");
-		break;
-	case send_message_in_p2p_chat:
-		reciever = { (SOCKET)(std::stoi(req.args[0])), req.args[1] };
-		members[0] = sender; members[1] = reciever;
-		pchat = *(std::find(chats.p2p_chats.begin(), chats.p2p_chats.end(),
-			[members](const p2p_chat& chat) { return chat == members; }));
-
-		// На случай, если сообщение разделилось сепаратором в виде символа ';'
-		for (int i = 2; i < req.args.size(); i++) message += req.args[i] + ";";
-		Chat::send_message(pchat, message, sender);
-
-		Logger::Log("Клиент " + GetMyIp4(client_socket)
-			+ " под именем " + (*GetClientIterator(client_socket)).name + " отправил сообщение в p2p чат");
-		break;
-	default:
-		break;
-	}
-}
-
-bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
-{
-	std::string path = "";
-
-	std::string name_group_chat;
-	group_chat gchat;
-
-	p2p_chat pchat;
-	client_info reciever;
-	client_info members[2];
-
-	client_info sender = (*GetClientIterator(client_socket));
-	switch (req.action) {
-	case send_file_in_common_chat:
-		// На случай, если путь разделился сепаратором в виде символа ';'
-		for (auto& part : req.args) path += part + ";";
-
-		Chat::send_file(chats.c_chat, path, sender);
-		Logger::Log("Клиент " + GetMyIp4(client_socket)
-			+ " под именем " + (*GetClientIterator(client_socket)).name + " отправил файл в общий чат");
-		break;
-	case send_file_in_group_chat:
-		name_group_chat = req.args[0];
-		gchat = *(std::find(chats.group_chats.begin(), chats.group_chats.end(),
-			[name_group_chat](const group_chat& chat) { return chat.name == name_group_chat; }));
-		
-		// На случай, если путь разделился сепаратором в виде символа ';'
-		for (int i = 1; i < req.args.size(); i++) path += req.args[i] + ";";
-		Chat::send_file(gchat, path, sender);
-
-		Logger::Log("Клиент " + GetMyIp4(client_socket)
-			+ " под именем " + (*GetClientIterator(client_socket)).name + " отправил файл в групповой чат");
-		break;
-	case send_file_in_p2p_chat:
-		reciever = { (SOCKET)(std::stoi(req.args[0])), req.args[1] };
-		members[0] = sender; members[1] = reciever;
-		pchat = *(std::find(chats.p2p_chats.begin(), chats.p2p_chats.end(),
-			[members](const p2p_chat& chat) { return chat == members; }));
-		
-		// На случай, если путь разделился сепаратором в виде символа ';'
-		for (int i = 2; i < req.args.size(); i++) path += req.args[i] + ";";
-		Chat::send_file(pchat, path, sender);
-
-		Logger::Log("Клиент " + GetMyIp4(client_socket)
-			+ " под именем " + (*GetClientIterator(client_socket)).name + " отправил файл в p2p чат");
-		break;
-	default:
-		break;
-	}
-}
-
-bool Server::CreateChat(API_request& req, SOCKET& client_socket)
-{
-	std::vector<client_info> clnts;
-
-	switch (req.action) {
-	case create_group_chat:
-		for (size_t i = 1; i < req.args.size(); i+=2)
-			clnts.push_back({ (SOCKET)(std::stoi(req.args[i])), req.args[i+1] });
-		chats.group_chats.push_back(Chat::create_group_chat(req.args[0], clnts));
-		break;
-	case create_p2p_chat:
-		break;
-	default:
-		break;
-	}
+	API_request r = ParseToApi(req);
+	return DoRequest(r, client_socket);
 }
 
 bool Server::Start(std::string host, int port) {
 	if (!WSAManager::InitializeWinsock()) return false;
 
 	char buff[INET_ADDRSTRLEN];
-	sockaddr_in server_addr, client_addr;
+	sockaddr_in server_addr;
 
 	server_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (server_socket == INVALID_SOCKET) {
@@ -375,7 +149,6 @@ bool Server::Start(std::string host, int port) {
 			closesocket(server_socket);
 			return false;
 		}
-		FD_ZERO(&rset);
 		FD_ZERO(&wset);
 	}
 
@@ -383,33 +156,483 @@ bool Server::Start(std::string host, int port) {
 	Logger::Log("Сервер запущен на http://" + std::string(buff) + ":" + std::to_string(port) + "\n");
 
 	int nready;
+	timeval timeout = { 0, 10 };
 	// Рабочий цикл сервера.
 	while (true) {
-		
+		SOCKET client_socket;
+		FD_ZERO(&rset);
 		FD_SET(server_socket, &rset);
 
-		nready = select(MAXSOCKS, &rset, NULL, NULL, NULL);
-
-		if (FD_ISSET(server_socket, &rset)) {
-			int len = sizeof(client_addr);
-			int res = accept(server_socket, (sockaddr*)&client_addr, &len);
-			/*childpid = fork();
-			if ()*/
+		for (auto& client : clients) {
+			FD_SET(client.client_socket, &rset);
 		}
 
-		SOCKET client_socket = AcceptClient(server_socket);
+		nready = select(MAXSOCKS + 1, &rset, NULL, NULL, &timeout);
 
-		if (!RecvRequest(client_socket)) {
-			Logger::Log("Клиент " + GetMyIp4(client_socket) + " отключен");
-			closesocket(client_socket);
+		if (nready > 0) {
+			// Проверяем новый ли клиент
+			if (FD_ISSET(server_socket, &rset)) {
+				client_socket = AcceptClient(server_socket);
+				if (!RecvRequest(client_socket)) {
+					Logger::Log("Клиент " + GetMyIp4(client_socket) + " не смог зарегистрироваться");
+				}
+				nready--;
+			}
+
+			// Обрабатываем клиентов с данными
+			for (auto it = clients.begin(); nready > 0 && it != clients.end(); ) {
+				if (FD_ISSET(it->client_socket, &rset)) {
+					if (!RecvRequest(it->client_socket)) {
+						it = RemoveClient(it->client_socket);
+					}
+					else {
+						++it;
+					}
+					nready--;
+				}
+				else {
+					++it;
+				}
+			}
 		}
 	}
 
 	return true;
 }
 
+bool Server::DoRequest(API_request& req, SOCKET& client_socket)
+{
+	switch (req.action) {
+	case register_yourself:
+		return AddClient(req, client_socket);
+		break;
+	case show_client_list:
+		return ShowClientList(client_socket);
+		break;
+	case create_group_chat:
+	case create_p2p_chat:
+		CreateChat(req, client_socket);
+		break;
+	case send_message_in_common_chat:
+	case send_message_in_group_chat:
+	case send_message_in_p2p_chat:
+		SendMessageInChat(req, client_socket);
+		break;
+	case send_file_in_common_chat:
+	case send_file_in_group_chat:
+	case send_file_in_p2p_chat:
+		SendFileInChat(req, client_socket);
+		break;
+	case get_file_from_common_chat:
+	case get_file_from_group_chat:
+	case get_file_from_p2p_chat:
+		GetFile(req, client_socket);
+		break;
+	default:
+		return false;
+		break;
+	}
+	return true;
+}
+
+bool Server::SendResponse(SOCKET& sock, const std::string& response)
+{
+	// Функция отправки данных "в общем виде".
+	size_t req_pos = 0;
+	const auto req_length = response.length();
+	std::string req_send;
+	while (req_pos < req_length)
+	{
+		req_send = response.substr(req_pos, min(req_pos + MAX_RECV_BUFFER_SIZE, req_length));
+		int bytes_count = send(sock, req_send.c_str(), sizeof(req_send), 0);
+		if (bytes_count < 0)
+		{
+			return false;
+		}
+		else
+		{
+			// Сместить указатель на свободное место в буфере.
+			req_pos += bytes_count;
+		}
+	}
+	return true;
+}
+
+std::vector<client_info>::iterator Server::GetClientIterator(SOCKET& client_socket)
+{
+	auto it = std::find_if(clients.begin(), clients.end(),
+		[client_socket](const client_info& info) { return info.client_socket == client_socket; });
+	if (it == clients.end()) throw std::invalid_argument("Не существует такого клиента по сокету");
+
+	return it;
+}
+
+client_info& Server::GetClient(std::string name)
+{
+	auto it = std::find_if(clients.begin(), clients.end(),
+		[name](const client_info& info) { return info.name == name; });
+	if (it == clients.end()) throw std::invalid_argument("Не существует такого клиента по имени");
+	return *it;
+}
+
+bool Server::AddClient(API_request& req, SOCKET& client_socket)
+{
+	clients.push_back({ client_socket, req.args[0], Logger::LogTime() });
+
+	std::string response = "";
+	response += std::to_string(register_yourself) + separator;
+	response += std::to_string(client_socket) + separator + req.args[0];
+	if (SendResponse(client_socket, response + separator))
+	{
+		Logger::Log("Клиент " + GetMyIp4(client_socket) + " зарегистрировался под именем " + req.args[0]);
+		return true;
+	}
+	else return false;
+}
+
+std::vector<client_info>::iterator Server::RemoveClient(SOCKET& client_socket)
+{
+	std::string log = "Клиент " + GetMyIp4(client_socket);
+	auto it = GetClientIterator(client_socket);
+
+	if (it == clients.end()) {
+		Logger::Log(log + " не зарегистрировался и вышел");
+		return it;
+	}
+
+	Logger::Log(log + " под именем " + (*it).name + " отключился");
+	closesocket(client_socket);
+	return clients.erase(it);
+}
+
+bool Server::ShowClientList(SOCKET& client_socket)
+{
+	std::string response = std::to_string(show_client_list) + separator;
+	for (auto& client : clients)
+	{
+		response += client.name + ", Время регистрации: " + client.register_time + "\n";
+	}
+	if (SendResponse(client_socket, response + separator))
+	{
+		Logger::Log("Клиент " + GetMyIp4(client_socket)
+			+ " под именем " + (*GetClientIterator(client_socket)).name + " получил список клиентов");
+		return true;
+	}
+	else return false;
+}
+
+bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
+{
+	std::string chat_type, message = "", response = "";
+	std::vector<client_info> recievers;
+	int i = 0;
+	client_info& sender = (*GetClientIterator(client_socket));
+	std::string log = "Клиент " + GetMyIp4(client_socket)
+		+ " под именем " + sender.name;
+
+	try
+	{
+		common_chat& chat = GetChatUnsafe(req, sender);
+		response += std::to_string(req.action);
+		switch (req.action) {
+		case send_message_in_common_chat:
+			chat_type = "общий";
+			recievers = std::vector<client_info>(clients);
+			break;
+		case send_message_in_group_chat:
+			chat_type = "групповой";
+			response += separator + req.args[0];
+			recievers = std::vector<client_info>((*dynamic_cast<group_chat*>(&chat)).members);
+			i = 1;
+			break;
+		case send_message_in_p2p_chat:
+			chat_type = "p2p";
+			recievers = { (*dynamic_cast<p2p_chat*>(&chat)).member1, (*dynamic_cast<p2p_chat*>(&chat)).member2 };
+			i = 2;
+			break;
+		default:
+			return false;
+			break;
+		}
+
+		// На случай, если сообщение содержит сепаратор
+		for (; i < req.args.size(); i++) message += req.args[i];
+		Chat::send_message(chat, message, sender);
+
+		Logger::Log(log + " отправил сообщение в " + chat_type + " чат");
+
+		if (req.action != send_message_in_p2p_chat) {
+			response += separator + chat.messages.back();
+			for (auto& rreciever : recievers) {
+				if (!SendResponse(rreciever.client_socket, response + separator)) {
+					RemoveClient(rreciever.client_socket);
+				}
+			}
+		}
+		else {
+			response = std::to_string(req.action) + separator
+				+ std::to_string(recievers[1].client_socket) + separator
+				+ recievers[1].name + separator
+				+ chat.messages.back();
+			if (!SendResponse(recievers[0].client_socket, response + separator)) {
+				RemoveClient(recievers[0].client_socket);
+			}
+
+			response = std::to_string(req.action) + separator
+				+ std::to_string(recievers[0].client_socket) + separator
+				+ recievers[0].name + separator
+				+ chat.messages.back();
+			if (!SendResponse(recievers[1].client_socket, response + separator)) {
+				RemoveClient(recievers[1].client_socket);
+			}
+		}
+		return true;
+	}
+	catch (const std::invalid_argument&)
+	{
+		Logger::Log(log + " попытался написать в несуществующий чат");
+		response = std::to_string(error) + separator + "Такого чата больше не существует(";
+		if (!SendResponse(client_socket, response + separator)) {
+			RemoveClient(client_socket);
+		}
+		return false;
+	}
+}
+
+bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
+{
+	std::string chat_type, path = dst_files, content, response = "";
+	std::vector<client_info> recievers;
+	client_info sender = (*GetClientIterator(client_socket));
+	std::string log = "Клиент " + GetMyIp4(client_socket)
+		+ " под именем " + sender.name;
+
+	try
+	{
+		common_chat& chat = GetChatUnsafe(req, sender);
+		response += std::to_string(req.action);
+		switch (req.action) {
+		case send_file_in_common_chat:
+			chat_type = "общий";
+			path += FileUtils::GetFileName(req.args[0]);
+			content = req.args[1];
+			recievers = std::vector<client_info>(clients);
+			break;
+		case send_file_in_group_chat:
+			chat_type = "групповой";
+			response += separator + req.args[0];
+			path += FileUtils::GetFileName(req.args[1]);
+			content = req.args[2];
+			recievers = std::vector<client_info>((*dynamic_cast<group_chat*>(&chat)).members);
+			break;
+		case send_file_in_p2p_chat:
+			chat_type = "p2p";
+			path += FileUtils::GetFileName(req.args[2]);
+			content = req.args[3];
+			recievers = { (*dynamic_cast<p2p_chat*>(&chat)).member1, (*dynamic_cast<p2p_chat*>(&chat)).member2 };
+			break;
+		default:
+			return false;
+			break;
+		}
+
+		if (!FileUtils::WriteFileContent(path, content)) {
+			Logger::Log(log + " попытался отправить файл в " + chat_type + " чат, но произошла ошибка");
+			SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл" + separator);
+			return false;
+		}
+		Chat::send_file(chat, path, sender);
+
+		Logger::Log(log + " отправил файл в " + chat_type + " чат");
+
+		if (req.action != send_file_in_p2p_chat) {
+			response += separator + chat.messages.back()
+				+ separator + chat.file_paths.back();
+			for (auto& rreciever : recievers) {
+				if (!SendResponse(rreciever.client_socket, response + separator)) {
+					RemoveClient(rreciever.client_socket);
+				}
+			}
+		}
+		else {
+			response = std::to_string(req.action) + separator
+				+ std::to_string(recievers[1].client_socket) + separator
+				+ recievers[1].name + separator
+				+ chat.messages.back() + separator
+				+ chat.file_paths.back();
+			if (!SendResponse(recievers[0].client_socket, response + separator)) {
+				RemoveClient(recievers[0].client_socket);
+			}
+
+			response = std::to_string(req.action) + separator
+				+ std::to_string(recievers[0].client_socket) + separator
+				+ recievers[0].name + separator
+				+ chat.messages.back() + separator
+				+ chat.file_paths.back();
+			if (!SendResponse(recievers[1].client_socket, response + separator)) {
+				RemoveClient(recievers[1].client_socket);
+			}
+		}
+		return true;
+	}
+	catch (const std::invalid_argument&)
+	{
+		Logger::Log(log + " попытался отправить файл в несуществующий чат");
+		response = std::to_string(error) + separator + "Такого чата больше не существует(";
+		if (!SendResponse(client_socket, response + separator)) {
+			RemoveClient(client_socket);
+		}
+		return false;
+	}
+}
+
+bool Server::CreateChat(API_request& req, SOCKET& client_socket)
+{
+	std::string log = "Клиент " + GetMyIp4(client_socket)
+		+ " под именем " + (*GetClientIterator(client_socket)).name;
+	std::string response = "";
+
+	std::vector<client_info> clnts;
+	client_info clnt;
+	group_chat gc;
+	p2p_chat pc;
+	common_chat target_chat;
+
+	response += std::to_string(req.action);
+	int i = 1;
+	switch (req.action) {
+	case create_group_chat:
+		response += separator + req.args[0];
+		try
+		{
+			for (i = 1; i < req.args.size(); i++) {
+
+				clnt = GetClient(req.args[i]);
+				clnts.push_back(clnt);
+				response += separator + std::to_string(clnt.client_socket) + separator + clnt.name;
+			}
+		}
+		catch (const std::invalid_argument&)
+		{
+			Logger::Log(log + " хотел создать групповой чат с " + req.args[i] + " но он вышел");
+			response = std::to_string(error) + separator + "Пользователь " + req.args[i] + " вышел(";
+			if (!SendResponse(client_socket, response + separator)) {
+				RemoveClient(client_socket);
+			}
+			return false;
+		}
+
+		clnt = *GetClientIterator(client_socket);
+		response += separator + std::to_string(clnt.client_socket) + separator + clnt.name;
+		clnts.push_back(clnt);
+		gc = Chat::create_group_chat(req.args[0], clnts);
+		target_chat = gc;
+
+		chats.group_chats.push_back(gc);
+		Logger::Log(log + " создал групповой чат " + gc.name);
+		break;
+	case create_p2p_chat:
+		try
+		{
+			clnt = GetClient(req.args[0]);
+		}
+		catch (const std::invalid_argument&)
+		{
+			Logger::Log(log + " хотел создать личный чат с " + req.args[0] + " но он вышел");
+			response = std::to_string(error) + separator + "Пользователь " + req.args[0] + " вышел(";
+			if (!SendResponse(client_socket, response + separator)) {
+				RemoveClient(client_socket);
+			}
+			return false;
+		}
+
+		clnts.push_back(clnt);
+		response += separator + std::to_string(clnt.client_socket) + separator + clnt.name;
+
+		clnt = *GetClientIterator(client_socket);
+		response += separator + std::to_string(clnt.client_socket) + separator + clnt.name;
+		clnts.push_back(*GetClientIterator(client_socket));
+
+		pc = Chat::create_p2p_chat(clnts[0], clnts[1]);
+		target_chat = pc;
+
+		chats.p2p_chats.push_back(pc);
+		Logger::Log(log + " создал p2p чат с " + clnt.name);
+		break;
+	default:
+		break;
+	}
+
+	for (auto& reciever : clnts) {
+		if (!SendResponse(reciever.client_socket, response + separator)) {
+			RemoveClient(reciever.client_socket);
+		}
+	}
+	return true;
+}
+
+bool Server::GetFile(API_request& req, SOCKET& client_socket)
+{
+	std::string log = "Клиент " + GetMyIp4(client_socket)
+		+ " под именем " + (*GetClientIterator(client_socket)).name;
+	std::string content = FileUtils::GetFile(dst_files + req.args[0]);
+
+	if (SendResponse(client_socket, std::to_string(req.action) + separator + req.args[0] + separator + content + separator)) {
+		Logger::Log(log + " скачал файл " + req.args[0]);
+		return true;
+	}
+
+	return false;
+}
+
+common_chat& Server::GetChatUnsafe(API_request& req, client_info& sender)
+{
+	std::string name_group_chat = "";
+	std::vector<group_chat>::iterator gchit;
+
+	p2p_chat pc, pc_temp;
+	std::vector<p2p_chat>::iterator pchit;
+	client_info member;
+
+	switch (req.action) {
+	case send_file_in_common_chat:
+	case send_message_in_common_chat:
+		return chats.c_chat;
+		break;
+	case send_file_in_group_chat:
+	case send_message_in_group_chat:
+		name_group_chat = req.args[0];
+		gchit = std::find_if(chats.group_chats.begin(), chats.group_chats.end(),
+			[name_group_chat](const group_chat& chat) { return chat.name == name_group_chat; });
+		if (gchit == chats.group_chats.end()) {
+			throw std::runtime_error("Упс, чат не найден: " + name_group_chat);
+		}
+
+		return *gchit;
+		break;
+	case send_file_in_p2p_chat:
+	case send_message_in_p2p_chat:
+		pc_temp.member1 = sender;
+		pc_temp.member2 = GetClient(req.args[1]);
+
+		pchit = std::find_if(chats.p2p_chats.begin(), chats.p2p_chats.end(),
+			[pc_temp](const p2p_chat& chat) { return chat == pc_temp; });
+		if (pchit == chats.p2p_chats.end()) {
+			throw std::runtime_error("Упс, чат не найден: " + pc_temp.member1.name + " и " + pc_temp.member2.name);
+		}
+		return *pchit;
+		break;
+	default:
+		throw std::runtime_error("Упс, неизвестный чат");
+		break;
+	}
+}
+
 Server::~Server() {
 	closesocket(server_socket);
+	for (auto& client : clients) {
+		closesocket(client.client_socket);
+	}
 	WSACleanup();
 
 	Logger::Log("Сервер выключен");

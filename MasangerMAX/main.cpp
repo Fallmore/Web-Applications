@@ -1,77 +1,50 @@
 ﻿// HttpFileDns.cpp : Этот файл содержит функцию "main". Здесь начинается и заканчивается выполнение программы.
 //
 
-#include <iostream>
 #include "Server.h"
-#include "Client.h"
+#include "ClientGui.h"
+//#include "SplitConsole.h"
 
 using namespace std;
 
 void SettingsServer() {
 	Server server;
-	string host, portS;
-	int port;
+	string host = "10.178.229.253", portS;
+	int port = 6;
 	bool err = false;
 	do
 	{
 		if (err) cout << "Ошибка! Введите другие параметры!" << endl;
 
-		cout << "Введите IP-адресс для сервера: ";
-		cin >> host;
+		//cout << "Введите IP-адресс для сервера: ";
+		//cin >> host;
 
-		do
-		{
-			cout << "Введите порт для сервера: ";
-			cin >> portS;
-			try
-			{
-				port = stoi(portS);
-				err = false;
-			}
-			catch (const std::exception&)
-			{
-				cout << "Ошибка! Вы ввели сторонние символы!" << endl;
-				err = true;
-			}
+		//do
+		//{
+		//	cout << "Введите порт для сервера: ";
+		//	cin >> portS;
+		//	try
+		//	{
+		//		port = stoi(portS);
+		//		err = false;
+		//	}
+		//	catch (const std::exception&)
+		//	{
+		//		cout << "Ошибка! Вы ввели сторонние символы!" << endl;
+		//		err = true;
+		//	}
 
-		} while (err);
+		//} while (err);
 
 
 	} while (err = !server.Start(host, port)); // Если будет ошибка во время старта, то продолжится цикл, 
 	//	а иначе сервер будет работать
 }
 
-void ClientMenu() {
-	Client client;
-	std::string host, port, message;
-	int err = 0;
+void StartClientGui() {
+	ClientGui gui;
 
-	do
-	{
-		if (err == INVALID_SOCKET) cout << "Ошибка подключения! Введите данные повторно";
-		err = 0;
-
-		cout << "Введите IP сервера: ";
-		cin >> host;
-		cout << "Введите порт сервера: ";
-		cin >> port;
-	} while (err = client.CreateConnection(host, port) == INVALID_SOCKET);
-	
-	cout << endl << "Соединение с " + host + ":" + port + " прошло успешно" << endl;
-	getline(cin, message);
-
-	do
-	{
-		cout << endl << "Введите сообщение или 0 для выхода: ";
-		getline(cin, message);
-
-		if (message != "0")
-			if (client.SendResponse(message))
-				cout << "Сообщение успешно отправлено!" << endl;
-			else cout << "Сообщение не отправлено" << endl;
-		else client.Disconnect();
-
-	} while (message != "0");
+	gui.Start();
 }
 
 void CheckEnter(int& choice, int NumberOfChoice)
@@ -116,11 +89,11 @@ void MainMenu() {
 		SettingsServer();
 		break;
 	case 2:
-		ClientMenu();
+		StartClientGui();
 		break;
 	case 3:
 		system("pause");
-		exit(0);
+		return;
 		break;
 	}
 	system("pause");
@@ -135,4 +108,8 @@ int main()
 	setlocale(LC_ALL, "RUS");
 
 	MainMenu();
+	/*system("pause");
+	SplitConsole sc;
+	
+	system("pause");*/
 }

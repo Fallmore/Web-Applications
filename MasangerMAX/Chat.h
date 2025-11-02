@@ -1,11 +1,6 @@
 #pragma once
-#pragma comment(lib, "ws2_32.lib")
-#include <winsock2.h>
-#include <Ws2tcpip.h>
-#include <vector>
-#include <string>
-#include "Client.h"
-#include "Logger.h"
+#include "api.h"
+#include "FileUtils.h"
 
 struct common_chat {
 	std::vector<std::string> messages;
@@ -14,7 +9,6 @@ struct common_chat {
 	virtual ~common_chat() = default;
 	virtual void on_message_sent(const std::string& message, client_info& sender);
 	virtual void on_file_sent(const std::string& file_path, client_info& sender);
-	//virtual int notify_members(API action, std::string& new_message, std::vector<client_info>& members);
 };
 
 struct group_chat : common_chat {
@@ -28,7 +22,7 @@ struct p2p_chat : common_chat {
 	client_info member1;
 	client_info member2;
 
-	bool operator==(const client_info members[2]) const;
+	bool operator==(const p2p_chat& ch) const;
 };
 
 struct chats {

@@ -1,33 +1,53 @@
 #pragma once
-#pragma comment(lib, "ws2_32.lib")
-#include <WinSock2.h>
-#include <Ws2tcpip.h>
-#include <string>
-#include "WSAManager.h"
-
-struct client_info {
-	SOCKET client_socket;
-	std::string name;
-	std::string register_time;
-
-	bool operator==(const client_info& client) const;
-};
+#include "chat.h"
+#include <thread>
+#include <mutex>
+#include <array>
+#include <chrono>
 
 class Client
 {
 public:
 
+	chats GetChats();
+
+	common_chat& GetChat(API_request& request);
+	
+	common_chat& GetChatUnsafe(API_request& request);
+
+	API_request GetResponse();
+
 	SOCKET CreateConnection(const std::string& host, const std::string& port);
 
-	bool SendResponse(const std::string& request);
+	bool RecvResponse();
+
+	bool SendRequest(API_request& request);
+	
+	void ManageResponse();
+
+	void StartListening();
+
+	void Listening();
+
+	std::string GetDstFiles();
 
 	void Disconnect();
 
-	Client();
-
 	~Client();
 
+	client_info we;
+
+	std::atomic<bool> is_response_get = false, continue_listening = false;
 private:
-	SOCKET server_sock;
+
+	SOCKET server_sock = INVALID_SOCKET;
+	fd_set rset;
+
+	std::mutex sock_mutex, response_mutex, chats_mutex;
+	std::thread listen_t;
+
+	chats chats;
+	API_request response;
+	std::string dst_files = "D:\\New data\\repos\\Web Applications (difficult)\\x64\\Debug\\client temp\\";
 };
 
