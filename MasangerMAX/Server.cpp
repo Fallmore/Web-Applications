@@ -323,8 +323,9 @@ bool Server::ShowClientList(SOCKET& client_socket)
 
 bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
 {
-	std::string message = "", response = "";
+	std::string chat_type, message = "", response = "";
 	std::vector<client_info> recievers;
+	int i = 0;
 	client_info& sender = (*GetClientIterator(client_socket));
 	std::string log = "Клиент " + GetMyIp4(client_socket)
 		+ " под именем " + sender.name;
@@ -335,34 +336,30 @@ bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
 		response += std::to_string(req.action);
 		switch (req.action) {
 		case send_message_in_common_chat:
-			// На случай, если сообщение разделилось сепаратором
-			for (auto& part : req.args) message += part;
-			Chat::send_message(chat, message, sender);
-
+			chat_type = "общий";
 			recievers = std::vector<client_info>(clients);
-			Logger::Log(log + " отправил сообщение в общий чат");
 			break;
 		case send_message_in_group_chat:
+			chat_type = "групповой";
 			response += separator + req.args[0];
-
-			// На случай, если сообщение разделилось сепаратором
-			for (int i = 1; i < req.args.size(); i++) message += req.args[i];
-			Chat::send_message(chat, message, sender);
-
 			recievers = std::vector<client_info>((*dynamic_cast<group_chat*>(&chat)).members);
-			Logger::Log(log + " отправил сообщение в групповой чат");
+			i = 1;
 			break;
 		case send_message_in_p2p_chat:
-			// На случай, если сообщение разделилось сепаратором
-			for (int i = 2; i < req.args.size(); i++) message += req.args[i];
-			Chat::send_message(chat, message, sender);
-
+			chat_type = "p2p";
 			recievers = { (*dynamic_cast<p2p_chat*>(&chat)).member1, (*dynamic_cast<p2p_chat*>(&chat)).member2 };
-			Logger::Log(log + " отправил сообщение в p2p чат");
+			i = 2;
 			break;
 		default:
+			return false;
 			break;
 		}
+
+		// На случай, если сообщение содержит сепаратор
+		for (; i < req.args.size(); i++) message += req.args[i];
+		Chat::send_message(chat, message, sender);
+
+		Logger::Log(log + " отправил сообщение в " + chat_type + " чат");
 
 		if (req.action != send_message_in_p2p_chat) {
 			response += separator + chat.messages.back();
@@ -404,7 +401,7 @@ bool Server::SendMessageInChat(API_request& req, SOCKET& client_socket)
 
 bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 {
-	std::string path, response = "";
+	std::string chat_type, path = dst_files, content, response = "";
 	std::vector<client_info> recievers;
 	client_info sender = (*GetClientIterator(client_socket));
 	std::string log = "Клиент " + GetMyIp4(client_socket)
@@ -416,45 +413,37 @@ bool Server::SendFileInChat(API_request& req, SOCKET& client_socket)
 		response += std::to_string(req.action);
 		switch (req.action) {
 		case send_file_in_common_chat:
-			path += req.args[0];
-			if (!FileUtils::WriteFile(path, dst_files)) {
-				Logger::Log(log + " попытался отправить файл в общий чат, но произошла ошибка");
-				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл" + separator);
-				return false;
-			}
-			Chat::send_file(chat, path, sender);
-
+			chat_type = "общий";
+			path += FileUtils::GetFileName(req.args[0]);
+			content = req.args[1];
 			recievers = std::vector<client_info>(clients);
-			Logger::Log(log + " отправил файл в общий чат");
 			break;
 		case send_file_in_group_chat:
+			chat_type = "групповой";
 			response += separator + req.args[0];
-			path += req.args[1];
-			if (!FileUtils::WriteFile(path, dst_files)) {
-				Logger::Log(log + " попытался отправить файл в групповой чат, но произошла ошибка");
-				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл" + separator);
-				return false;
-			}
-			Chat::send_file(chat, path, sender);
-
+			path += FileUtils::GetFileName(req.args[1]);
+			content = req.args[2];
 			recievers = std::vector<client_info>((*dynamic_cast<group_chat*>(&chat)).members);
-			Logger::Log(log + " отправил файл в групповой чат");
 			break;
 		case send_file_in_p2p_chat:
-			path += req.args[2];
-			if (!FileUtils::WriteFile(path, dst_files)) {
-				Logger::Log(log + " попытался отправить файл в p2p чат, но произошла ошибка");
-				SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл" + separator);
-				return false;
-			}
-			Chat::send_file(chat, path, sender);
-
+			chat_type = "p2p";
+			path += FileUtils::GetFileName(req.args[2]);
+			content = req.args[3];
 			recievers = { (*dynamic_cast<p2p_chat*>(&chat)).member1, (*dynamic_cast<p2p_chat*>(&chat)).member2 };
-			Logger::Log(log + " отправил файл в p2p чат");
 			break;
 		default:
+			return false;
 			break;
 		}
+
+		if (!FileUtils::WriteFileContent(path, content)) {
+			Logger::Log(log + " попытался отправить файл в " + chat_type + " чат, но произошла ошибка");
+			SendResponse(client_socket, std::to_string(error) + separator + "Не удалось отправить файл" + separator);
+			return false;
+		}
+		Chat::send_file(chat, path, sender);
+
+		Logger::Log(log + " отправил файл в " + chat_type + " чат");
 
 		if (req.action != send_file_in_p2p_chat) {
 			response += separator + chat.messages.back()

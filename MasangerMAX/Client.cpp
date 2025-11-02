@@ -292,6 +292,11 @@ void Client::Listening()
 	}
 }
 
+std::string Client::GetDstFiles()
+{
+	return dst_files;
+}
+
 void Client::Disconnect()
 {
 	if (server_sock != INVALID_SOCKET) {

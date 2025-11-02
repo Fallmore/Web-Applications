@@ -460,7 +460,7 @@ bool ClientGui::OpenFiles(API_request& request)
 
 	if (!client.SendRequest(temp_req)) return false;
 	API_request response;
-	// Если кто-то что-то отправил в какой-то чат, то ждём, 
+	// Если кто-то что-то отправил в какой-то из наших чатов, то ждём, 
 	// пока не пришлют ответ на скачивание файла
 	do
 	{
@@ -481,18 +481,22 @@ bool ClientGui::OpenFiles(API_request& request)
 
 bool ClientGui::SendFile(API_request& request)
 {
+	API_request temp_req = request;
+	string file_path, content;
+
 	system("cls");
 	cout << "=====Отправка файла=====\n\n";
 
 	cout << "Введите путь отправляемого файла: ";
-	string file_path;
 	getline(cin, file_path);
-	API_request temp_req = request;
 	temp_req.args.push_back(file_path);
+	
+	content = FileUtils::GetFile(client.GetDstFiles() + FileUtils::GetFileName(file_path));
+	temp_req.args.push_back(content);
 
 	if (!client.SendRequest(temp_req)) return false;
 	API_request response;
-	// Если кто-то что-то отправил в какой-то чат, то ждём, 
+	// Если кто-то что-то отправил в какой-то из наших чатов, то ждём, 
 	// пока не пришлют ответ на скачивание файла
 	do
 	{

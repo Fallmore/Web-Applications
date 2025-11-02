@@ -29,6 +29,8 @@ public:
 
 	void Listening();
 
+	std::string GetDstFiles();
+
 	void Disconnect();
 
 	~Client();
