@@ -8,6 +8,14 @@ bool Sniffer::init(std::string path_pcap, std::string if_address)
 		std::cerr << "socket() failed: " << WSAGetLastError() << std::endl;
 		return false;
 	}
+
+	// Устанавливаем опцию для получения заголовков
+	int optval = 1;
+	if (setsockopt(sock_, IPPROTO_IP, IP_HDRINCL, (char*)&optval, sizeof(optval)) == SOCKET_ERROR) {
+		std::cerr << "setsockopt() failed: " << WSAGetLastError() << std::endl;
+		return false;
+	}
+
 	// Для Windows адрес должен быть привязан до переключения в promisc-режим.
 	if (!bind_socket() || !switch_promisc(true))
 		return false;
@@ -18,6 +26,8 @@ bool Sniffer::init(std::string path_pcap, std::string if_address)
 		std::cerr << "Не удалось открыть файл!" << std::endl;
 		return false;
 	}
+
+	write_pcap_file_header();
 
 	initialized_ = true;
 
@@ -57,13 +67,22 @@ bool Sniffer::switch_promisc(bool turn_on)
 	return true;
 }
 
+void Sniffer::write_pcap_file_header()
+{
+	pcap_file_header file_hdr;
+
+	of_.write(reinterpret_cast<char*>(&file_hdr), sizeof(file_hdr));
+	of_.flush();
+}
+
 bool Sniffer::capture()
 {
 	// Первые 14 байт — фейковый Ethernet-заголовок под протокол IPv4.
 	std::array<char, BUFFER_SIZE_HDR + BUFFER_SIZE_PKT> buffer;
-	// 0x08 — тип IP в кадре Ethernet. По смещению = 12.
-	buffer[BUFFER_OFFSET_ETH] = 0x08;
 	pcap_sf_pkthdr* pkt = reinterpret_cast<pcap_sf_pkthdr*>(buffer.data());
+	char ip[INET_ADDRSTRLEN];
+	IN_ADDR sa1;
+
 	// Прочитать очередной пакет.
 	const int rc = recv(sock_, buffer.data() + BUFFER_WRITE_OFFSET, BUFFER_SIZE_IP, 0);
 	if (-1 == rc)
@@ -74,7 +93,24 @@ bool Sniffer::capture()
 	}
 	// Соединение разорвано — перестать читать пакеты.
 	if (!rc) return false;
-	std::cout << rc << " байт получено..." << std::endl;
+
+	// Анализируем что получили
+	if (rc >= sizeof(IPHeader)) {
+		IPHeader* hdr = (IPHeader*)(buffer.data() + BUFFER_WRITE_OFFSET);
+
+		sa1.s_addr = hdr->ip_srcaddr;
+		InetNtopA(AF_INET, &sa1.s_addr, ip, sizeof(ip));
+		printf(ip);
+		std::cout << "	->	";
+		sa1.s_addr = hdr->ip_destaddr;
+		InetNtopA(AF_INET, &sa1.s_addr, ip, sizeof(ip));
+		printf(ip);
+		std::cout << "	| ";
+		if (hdr->ip_protocol == IPPROTO_TCP) printf("TCP");
+		if (hdr->ip_protocol == IPPROTO_UDP) printf("UDP");
+		if (hdr->ip_protocol == IPPROTO_ICMP) printf("ICMP");
+		std::cout << "	| " << rc << " байт\n";
+	}
 
 	using namespace std::chrono;
 	// Рассчитать временную метку пакета.
@@ -88,8 +124,8 @@ bool Sniffer::capture()
 	// Установить поля заголовка PCAP.
 	pkt->ts.tv_sec = t_s.count();
 	pkt->ts.tv_usec = u_s.count();
-	pkt->caplen = rc + BUFFER_ADD_HEADER_SIZE;
-	pkt->len = rc + BUFFER_ADD_HEADER_SIZE;
+	pkt->caplen = rc + BUFFER_SIZE_HDR + BUFFER_ADD_HEADER_SIZE;
+	pkt->len = rc + BUFFER_SIZE_HDR + BUFFER_ADD_HEADER_SIZE;
 
 	// Запись пакета в файл.
 	of_.write(buffer.data(), rc + BUFFER_SIZE_HDR + BUFFER_ADD_HEADER_SIZE);

@@ -49,7 +49,6 @@ void ManageScanningLocalIps(Scanner& scanner) {
 
 }
 
-
 void CheckEnter(int& choice, int NumberOfChoice)
 {
 	cin.clear();
@@ -118,6 +117,5 @@ int main()
 
 	Scanner scanner;
 	MainMenu(scanner);
-	//delete(scanner);
 	system("pause");
 }

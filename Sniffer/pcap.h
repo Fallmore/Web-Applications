@@ -52,13 +52,14 @@ constexpr auto BUFFER_SIZE_IP = BUFFER_SIZE_PKT - BUFFER_SIZE_ETH;
 // Смещение Ethernet-заголовка в буфере: сразу за PCAP-заголовком.
 constexpr auto BUFFER_OFFSET_ETH = sizeof(pcap_sf_pkthdr);
 // Смещение IP-заголовка в буфере.
-constexpr auto BUFFER_OFFSET_IP = BUFFER_OFFSET_ETH + BUFFER_SIZE_ETH;
 
 #if defined(WIN32)
 // Для ОС Windows Ethernet-заголовок отсутствует.
-constexpr auto BUFFER_WRITE_OFFSET = BUFFER_OFFSET_IP;
+constexpr auto BUFFER_OFFSET_IP = BUFFER_OFFSET_ETH;
+constexpr auto BUFFER_WRITE_OFFSET = BUFFER_OFFSET_IP - BUFFER_SIZE_ETH;
 constexpr auto BUFFER_ADD_HEADER_SIZE = BUFFER_SIZE_ETH;
 #else
+constexpr auto BUFFER_OFFSET_IP = BUFFER_OFFSET_ETH + BUFFER_SIZE_ETH;
 constexpr auto BUFFER_WRITE_OFFSET = BUFFER_OFFSET_ETH;
 constexpr auto BUFFER_ADD_HEADER_SIZE = BUFFER_SIZE_ETH;
 #endif
