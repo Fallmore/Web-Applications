@@ -1,4 +1,4 @@
-# Web Applications (difficult)
+# Сетевые приложения
 
 ## Лабораторная 1 
 Проекты HttpFileDns и HttpServer.<br>
